@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";

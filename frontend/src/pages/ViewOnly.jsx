@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import AttendanceRing from "../components/AttendanceRing.jsx";

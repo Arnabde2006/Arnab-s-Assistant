@@ -1,3 +1,5 @@
+import React from "react";
+
 export default function AttendanceRing({ percentage, color = "var(--accent)", size = 88 }) {
   const radius = (size - 8) / 2;
   const circumference = 2 * Math.PI * radius;

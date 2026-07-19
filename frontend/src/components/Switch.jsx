@@ -1,3 +1,5 @@
+import React from "react";
+
 export default function Switch({ checked, onChange, label }) {
   return (
     <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: "var(--text-muted)" }}>
