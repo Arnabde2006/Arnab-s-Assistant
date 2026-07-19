@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import AttendanceRing from "../components/AttendanceRing.jsx";
