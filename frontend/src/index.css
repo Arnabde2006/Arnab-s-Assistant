@@ -338,31 +338,71 @@ button {
 }
 
 .theme-toggle {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--bg-elevated);
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.18);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 4px;
+  width: 72px;
 }
 
-.theme-toggle button {
+[data-theme="parchment"] .theme-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.theme-toggle-slider {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 30px;
+  height: 30px;
+  background: var(--accent);
+  border-radius: 50%;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.theme-toggle-btn {
+  position: relative;
   border: none;
   background: transparent;
-  border-radius: 999px;
+  border-radius: 50%;
   width: 30px;
   height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  font-size: 14px;
+  transition: color 0.2s ease, transform 0.1s ease;
+  z-index: 2;
+  cursor: pointer;
+  padding: 0;
 }
 
-.theme-toggle button.active {
-  background: var(--accent);
-  color: var(--accent-text);
+.theme-toggle-btn:hover {
+  color: var(--text);
+  transform: scale(1.08);
+}
+
+.theme-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.theme-toggle-btn.active {
+  color: var(--accent-text) !important;
+}
+
+[data-theme="parchment"] .theme-toggle-btn {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="parchment"] .theme-toggle-btn:hover {
+  color: #ffffff;
 }
 
 /* Attendance ring */
