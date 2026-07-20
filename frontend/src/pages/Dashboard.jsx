@@ -145,11 +145,12 @@ function ChatCard() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState(""); // live token buffer
   const scrollRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, streamingText]);
 
   const suggestions = [
     "Am I safe to miss class tomorrow?",
@@ -165,13 +166,32 @@ function ChatCard() {
     setMessages(nextMessages);
     setInput("");
     setLoading(true);
+    setStreamingText("");
+
     try {
-      const data = await api.post("/ai/chat", {
-        message: text,
-        history: nextMessages.slice(-8),
-      });
-      setMessages((m) => [...m, { role: "assistant", text: data.reply }]);
+      let accumulated = "";
+
+      await api.postStream(
+        "/ai/chat",
+        { message: text, history: nextMessages.slice(-8) },
+        {
+          onChunk: (chunk) => {
+            accumulated += chunk;
+            setStreamingText(accumulated);
+          },
+          onDone: (finalReply) => {
+            // Replace streaming buffer with final committed message
+            setStreamingText("");
+            setMessages((m) => [...m, { role: "assistant", text: finalReply || accumulated }]);
+          },
+          onError: (err) => {
+            setStreamingText("");
+            setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't get an answer (${err.message}).` }]);
+          },
+        }
+      );
     } catch (err) {
+      setStreamingText("");
       setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't get an answer (${err.message}).` }]);
     } finally {
       setLoading(false);
@@ -218,7 +238,19 @@ function ChatCard() {
             dangerouslySetInnerHTML={{ __html: formatMessage(m.text) }}
           />
         ))}
-        {loading && (
+
+        {/* Live streaming bubble — shows text as it arrives */}
+        {loading && streamingText && (
+          <div
+            className="chat-bubble assistant"
+            dangerouslySetInnerHTML={{
+              __html: formatMessage(streamingText) + '<span class="chat-cursor">▋</span>',
+            }}
+          />
+        )}
+
+        {/* Dot animation while waiting for first token */}
+        {loading && !streamingText && (
           <div className="chat-loading">
             <span className="chat-loading-dot" />
             <span className="chat-loading-dot" />
@@ -261,6 +293,7 @@ function ChatCard() {
     </div>
   );
 }
+
 
 function greeting() {
   const h = new Date().getHours();

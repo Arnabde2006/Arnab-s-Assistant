@@ -8,7 +8,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 const router = express.Router();
 router.use(requireAuth);
 
-// ---- Chat assistant -------------------------------------------------
+// ---- Chat assistant (SSE streaming) ----------------------------------------
 
 router.post("/chat", async (req, res) => {
   try {
@@ -32,7 +32,9 @@ router.post("/chat", async (req, res) => {
 
     const contextLines = [
       `Today's date: ${today}.`,
-      pct !== null ? `The student's overall attendance is ${pct}% (${present} present, ${halfDay} half days, ${total} total days logged).` : "No attendance has been logged yet.",
+      pct !== null
+        ? `The student's overall attendance is ${pct}% (${present} present, ${halfDay} half days, ${total} total days logged).`
+        : "No attendance has been logged yet.",
       todosRes.rows.length
         ? `Upcoming to-dos: ${todosRes.rows.map((t) => `"${t.text}" on ${t.date}${t.done ? " (done)" : ""}`).join("; ")}.`
         : "No upcoming to-dos.",
@@ -53,13 +55,39 @@ Context: ${contextLines}`;
     }
     parts.push({ text: `Student: ${message}` });
 
-    const reply = await callGemini({ systemInstruction, parts });
-    res.json({ reply: reply.trim() });
+    // ── SSE setup ──────────────────────────────────────────────────────────
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    let fullReply = "";
+
+    await callGemini({
+      systemInstruction,
+      parts,
+      onChunk: (chunk) => {
+        fullReply += chunk;
+        // Send each chunk as an SSE "delta" event
+        res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
+      },
+    });
+
+    // Signal end
+    res.write(`data: ${JSON.stringify({ done: true, reply: fullReply.trim() })}\n\n`);
+    res.end();
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message || "Chat failed" });
+    // If headers already sent (streaming started) send error over SSE
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ error: err.message || "Chat failed" })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ error: err.message || "Chat failed" });
+    }
   }
 });
+
 
 // ---- Exam timetable upload -> auto-add to calendar -------------------
 
