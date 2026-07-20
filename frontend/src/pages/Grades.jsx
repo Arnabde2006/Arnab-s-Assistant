@@ -7,12 +7,17 @@ export default function Grades() {
   const [semester, setSemester] = useState("");
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState("");
   const [data, setData] = useState({ semesters: [], cgpa: 0, totalCredits: 0 });
 
   async function refresh() {
-    const d = await api.get("/ai/grades");
-    setData(d);
+    try {
+      const d = await api.get("/ai/grades");
+      setData(d);
+    } finally {
+      setPageLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -46,6 +51,52 @@ export default function Grades() {
   async function removeSemester(sem) {
     const result = await api.del(`/ai/grades/${encodeURIComponent(sem)}`);
     setData(result);
+  }
+
+  if (pageLoading) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Grades</h1>
+            <p className="page-subtitle">Retrieving semester details and calculations...</p>
+          </div>
+        </div>
+
+        <div className="grid grid-2" style={{ marginBottom: 20 }}>
+          <div className="card" style={{ textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+            <div className="label">CGPA</div>
+            <div className="skeleton-pulse skeleton-stat" style={{ width: 80, height: 48, borderRadius: 8, margin: "12px auto" }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "60%", height: 14, borderRadius: 4, margin: "0 auto" }} />
+          </div>
+
+          <div className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="skeleton-pulse skeleton-text" style={{ width: "30%", height: 14, borderRadius: 4 }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "100%", height: 38, borderRadius: 999 }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "50%", height: 14, borderRadius: 4 }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "100%", height: 78, borderRadius: 16 }} />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {[1, 2].map((n) => (
+            <div key={n} className="card">
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ width: "40%" }}>
+                  <div className="skeleton-pulse skeleton-text" style={{ width: "70%", height: 16, borderRadius: 4, marginBottom: 8 }} />
+                  <div className="skeleton-pulse skeleton-text" style={{ width: "50%", height: 12, borderRadius: 4 }} />
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[1, 2, 3].map((c) => (
+                  <div key={c} className="skeleton-pulse skeleton-text" style={{ height: 32, borderRadius: 6, margin: 0 }} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
