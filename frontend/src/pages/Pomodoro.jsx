@@ -10,7 +10,8 @@ import {
   Settings,
   Plus,
   Minus,
-  SkipForward
+  SkipForward,
+  ChevronRight
 } from "lucide-react";
 
 const MODE_DEFAULTS = {
@@ -18,6 +19,14 @@ const MODE_DEFAULTS = {
   short: { label: "Short Break", minutes: 5, color: "var(--present)" },
   long: { label: "Long Break", minutes: 15, color: "#7A8FC1" },
 };
+
+const AMBIENT_OPTIONS = [
+  { value: "none", label: "No Sound", icon: "🔇" },
+  { value: "rain", label: "Rain Noise", icon: "🌧️" },
+  { value: "ocean", label: "Deep Brown", icon: "🌊" },
+  { value: "pulse", label: "Sine Pulse", icon: "💓" },
+];
+
 
 export default function Pomodoro() {
   const [mode, setMode] = useState("focus");
@@ -48,11 +57,24 @@ export default function Pomodoro() {
   // Ambient sound state
   const [ambientType, setAmbientType] = useState("none");
   const [volume, setVolume] = useState(0.2);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const intervalRef = useRef(null);
   const audioCtxRef = useRef(null);
   const currentNoiseSourceRef = useRef(null);
   const currentNoiseGainRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  // Click outside dropdown to close it
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Initialize and persist durations
   useEffect(() => {
@@ -462,46 +484,105 @@ export default function Pomodoro() {
     </div>
   );
 
-  // Ambient sound controller rendering helper
-  const renderAmbientPanel = () => (
-    <div className="pomo-ambient-panel">
-      <select
-        className="input"
-        style={{
-          background: "transparent",
-          border: "none",
-          padding: "2px 24px 2px 4px",
-          margin: 0,
-          width: "auto",
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-        value={ambientType}
-        onChange={(e) => handleAmbientTypeChange(e.target.value)}
-      >
-        <option value="none">🔇 No Sound</option>
-        <option value="rain">🌧️ Rain Noise</option>
-        <option value="ocean">🌊 Deep Brown Noise</option>
-        <option value="pulse">💓 Sine Pulse</option>
-      </select>
-      {ambientType !== "none" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <Volume2 size={14} style={{ color: "var(--text-muted)" }} />
-          <input
-            type="range"
-            min="0"
-            max="0.5"
-            step="0.01"
-            className="pomo-volume-slider"
-            value={volume}
-            onChange={handleVolumeChange}
-            title={`Ambient volume: ${Math.round(volume * 200)}%`}
-          />
-        </div>
-      )}
-    </div>
-  );
+  // Ambient sound controller rendering helper with custom dropdown
+  const renderAmbientPanel = () => {
+    const selectedOption = AMBIENT_OPTIONS.find(opt => opt.value === ambientType) || AMBIENT_OPTIONS[0];
+
+    return (
+      <div className="pomo-ambient-panel" style={{ position: "relative" }} ref={dropdownRef}>
+        <button
+          className="btn-ghost btn"
+          onClick={() => setDropdownOpen(!dropdownOpen)}
+          type="button"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            fontWeight: 600,
+            padding: "4px 8px",
+            borderRadius: 99,
+            border: "none",
+            background: "transparent",
+            color: "var(--text)",
+            minHeight: "auto",
+            cursor: "pointer"
+          }}
+        >
+          <span>{selectedOption.icon} {selectedOption.label}</span>
+          <ChevronRight size={14} style={{ transform: dropdownOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s", color: "var(--text-muted)" }} />
+        </button>
+
+        {dropdownOpen && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: "calc(100% + 8px)",
+              left: 0,
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border)",
+              borderRadius: "12px",
+              boxShadow: "var(--shadow)",
+              zIndex: 100,
+              width: 170,
+              padding: 4,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              animation: "pomoFadeIn 0.15s ease-out",
+            }}
+          >
+            {AMBIENT_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  handleAmbientTypeChange(opt.value);
+                  setDropdownOpen(false);
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  padding: "8px 12px",
+                  border: "none",
+                  background: opt.value === ambientType ? "var(--panel-hover)" : "transparent",
+                  color: opt.value === ambientType ? "var(--accent)" : "var(--text)",
+                  borderRadius: "8px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  textAlign: "left",
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+                className="pomo-dropdown-item"
+              >
+                <span>{opt.icon}</span>
+                <span style={{ flex: 1 }}>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {ambientType !== "none" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}>
+            <Volume2 size={14} style={{ color: "var(--text-muted)" }} />
+            <input
+              type="range"
+              min="0"
+              max="0.5"
+              step="0.01"
+              className="pomo-volume-slider"
+              value={volume}
+              onChange={handleVolumeChange}
+              title={`Ambient volume: ${Math.round(volume * 200)}%`}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ==========================================
   // FULL SCREEN VIEW OVERLAY
