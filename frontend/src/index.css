@@ -3,9 +3,9 @@
   --font-body: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  --radius-sm: 12px;
+  --radius-md: 24px;
+  --radius-lg: 32px;
 
   --present: #4fa88a;
   --absent: #c1554a;
@@ -49,9 +49,6 @@
   --skeleton-bg: rgba(30, 34, 41, 0.08);
   --skeleton-glow: rgba(30, 34, 41, 0.16);
 
-  --radius-sm: 12px;
-  --radius-md: 24px;
-  --radius-lg: 32px;
   --font-display: "Outfit", "Inter", system-ui, sans-serif;
 }
 
@@ -357,8 +354,8 @@ button {
   background: var(--accent);
   color: var(--accent-text);
   border: none;
-  border-radius: var(--radius-sm);
-  padding: 9px 16px;
+  border-radius: 999px;
+  padding: 10px 24px;
   font-size: 14px;
   font-weight: 600;
   transition: filter 0.15s, transform 0.1s;
@@ -376,6 +373,8 @@ button {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 10px 24px;
 }
 
 .btn-ghost:hover {
@@ -386,8 +385,8 @@ button {
   width: 100%;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  border-radius: 999px;
+  padding: 10px 20px;
   font-size: 14px;
 }
 
@@ -1004,27 +1003,6 @@ button {
 .file-upload-clear-btn:hover {
   color: var(--absent);
   background: rgba(193, 85, 74, 0.1);
-}
-
-/* Parchment theme buttons & inputs pill overrides */
-[data-theme="parchment"] .btn {
-  border-radius: 999px;
-  padding: 10px 24px;
-}
-
-[data-theme="parchment"] .btn-ghost {
-  border-radius: 999px;
-  padding: 10px 24px;
-}
-
-[data-theme="parchment"] .input {
-  border-radius: 999px;
-  padding: 10px 20px;
-}
-
-[data-theme="parchment"] select.input {
-  border-radius: 999px;
-  padding: 10px 20px;
 }
 
 /* Premium Chat Card Styles */

@@ -38,9 +38,19 @@ const app = express();
 // off since this is a pure JSON API with no HTML views to protect.
 app.use(helmet({ contentSecurityPolicy: false }));
 
+const allowedOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || "*",
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const isLocalhost = /^http:\/\/localhost:\d+$/.test(origin);
+      if (isLocalhost || origin === allowedOrigin) {
+        return callback(null, true);
+      }
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
   })
 );
 app.use(express.json({ limit: "15mb" }));
