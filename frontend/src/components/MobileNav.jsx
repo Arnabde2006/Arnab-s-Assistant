@@ -9,6 +9,8 @@ import {
   CalendarDays,
   BookOpen,
   GraduationCap,
+  Wallet,
+  ArrowLeftRight,
   Timer,
   LogOut,
   Sun,
@@ -23,9 +25,12 @@ const links = [
   { to: "/timetable", label: "Classes", icon: CalendarDays },
   { to: "/exams", label: "Exams", icon: BookOpen },
   { to: "/grades", label: "Grades", icon: GraduationCap },
+  { to: "/finance", label: "Finance", icon: Wallet },
+  { to: "/debts", label: "Debts", icon: ArrowLeftRight },
   { to: "/pomodoro", label: "Timer", icon: Timer },
   { to: "/profile", label: "Profile", icon: User },
 ];
+
 
 export default function MobileNav() {
   const { user, logout } = useAuth();

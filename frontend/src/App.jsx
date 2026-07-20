@@ -13,6 +13,8 @@ import Todos from "./pages/Todos.jsx";
 import Timetable from "./pages/Timetable.jsx";
 import ExamTimetable from "./pages/ExamTimetable.jsx";
 import Grades from "./pages/Grades.jsx";
+import Finance from "./pages/Finance.jsx";
+import Debts from "./pages/Debts.jsx";
 import Pomodoro from "./pages/Pomodoro.jsx";
 import Profile from "./pages/Profile.jsx";
 
@@ -42,6 +44,8 @@ export default function App() {
       <Route path="/timetable" element={<ProtectedShell><Timetable /></ProtectedShell>} />
       <Route path="/exams" element={<ProtectedShell><ExamTimetable /></ProtectedShell>} />
       <Route path="/grades" element={<ProtectedShell><Grades /></ProtectedShell>} />
+      <Route path="/finance" element={<ProtectedShell><Finance /></ProtectedShell>} />
+      <Route path="/debts" element={<ProtectedShell><Debts /></ProtectedShell>} />
       <Route path="/pomodoro" element={<ProtectedShell><Pomodoro /></ProtectedShell>} />
       <Route path="/profile" element={<ProtectedShell><Profile /></ProtectedShell>} />
     </Routes>

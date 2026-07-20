@@ -13,6 +13,8 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Wallet,
+  ArrowLeftRight,
   User
 } from "lucide-react";
 
@@ -23,6 +25,8 @@ const links = [
   { to: "/timetable", label: "Timetable", icon: CalendarDays },
   { to: "/exams", label: "Exam timetable", icon: BookOpen },
   { to: "/grades", label: "Grades", icon: GraduationCap },
+  { to: "/finance", label: "Finance", icon: Wallet },
+  { to: "/debts", label: "Debts", icon: ArrowLeftRight },
   { to: "/pomodoro", label: "Focus timer", icon: Timer },
   { to: "/profile", label: "Profile", icon: User },
 ];

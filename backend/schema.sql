@@ -88,6 +88,34 @@ CREATE TABLE IF NOT EXISTS college_holidays (
   UNIQUE (user_id, date)
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_budget NUMERIC;
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date DATE NOT NULL,
+  amount NUMERIC NOT NULL CHECK (amount > 0),
+  type TEXT NOT NULL CHECK (type IN ('expense', 'income')),
+  category TEXT NOT NULL DEFAULT 'other',
+  merchant TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'upload')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS debts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  person_name TEXT NOT NULL,
+  amount NUMERIC NOT NULL CHECK (amount > 0),
+  direction TEXT NOT NULL CHECK (direction IN ('owed_to_me', 'i_owe')),
+  note TEXT NOT NULL DEFAULT '',
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  settled BOOLEAN NOT NULL DEFAULT false,
+  settled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_subjects_user ON subjects(user_id);
 CREATE INDEX IF NOT EXISTS idx_day_attendance_user ON day_attendance(user_id);
 CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, date);
@@ -95,3 +123,5 @@ CREATE INDEX IF NOT EXISTS idx_timetable_user ON timetable_slots(user_id);
 CREATE INDEX IF NOT EXISTS idx_exams_user ON exams(user_id, exam_date);
 CREATE INDEX IF NOT EXISTS idx_grades_user_sem ON grade_entries(user_id, semester);
 CREATE INDEX IF NOT EXISTS idx_holidays_user ON college_holidays(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_debts_user ON debts(user_id, settled);
