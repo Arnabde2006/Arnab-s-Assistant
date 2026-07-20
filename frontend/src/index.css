@@ -169,6 +169,65 @@ button {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.sidebar.collapsed {
+  width: 76px;
+  padding: 24px 12px;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  min-height: 32px;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.sidebar-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 11px;
+  padding: 0;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--panel-hover);
+  color: var(--text);
+}
+
+.sidebar.collapsed .brand-tagline {
+  display: none;
+}
+
+.sidebar.collapsed .nav-link {
+  justify-content: center;
+  padding: 10px 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+.sidebar.collapsed .nav-icon {
+  font-size: 15px;
+  margin: 0;
 }
 
 .brand {
