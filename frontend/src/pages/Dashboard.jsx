@@ -148,12 +148,18 @@ function ChatCard() {
   const scrollRef = useRef(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, loading]);
 
-  async function send(e) {
-    e.preventDefault();
-    const text = input.trim();
+  const suggestions = [
+    "Am I safe to miss class tomorrow?",
+    "What exams are coming up?",
+    "List my urgent to-dos",
+    "How is my CGPA?"
+  ];
+
+  async function handleSend(textToSend) {
+    const text = textToSend.trim();
     if (!text || loading) return;
     const nextMessages = [...messages, { role: "user", text }];
     setMessages(nextMessages);
@@ -172,37 +178,85 @@ function ChatCard() {
     }
   }
 
+  function send(e) {
+    e.preventDefault();
+    handleSend(input);
+  }
+
+  function formatMessage(text) {
+    if (!text) return "";
+    let escaped = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    escaped = escaped.replace(/`(.*?)`/g, "<code>$1</code>");
+    
+    const lines = escaped.split("\n").map(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+        return `<li style="margin-left: 16px; margin-bottom: 4px;">${trimmed.substring(2)}</li>`;
+      }
+      return line;
+    });
+    
+    return lines.join("<br />");
+  }
+
   return (
     <div className="card">
-      <div className="label" style={{ marginBottom: 10 }}>Ask Arnab's Assistant AI</div>
-      <div ref={scrollRef} style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+      <div className="label" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: "var(--accent)" }}>✦</span> Ask Arnab's Assistant AI
+      </div>
+      
+      <div ref={scrollRef} className="chat-container">
         {messages.map((m, i) => (
           <div
             key={i}
-            style={{
-              alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-              maxWidth: "80%",
-              background: m.role === "user" ? "var(--accent-soft)" : "var(--bg-elevated)",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              padding: "8px 12px",
-              fontSize: 14,
-            }}
-          >
-            {m.text}
-          </div>
+            className={`chat-bubble ${m.role}`}
+            dangerouslySetInnerHTML={{ __html: formatMessage(m.text) }}
+          />
         ))}
-        {loading && <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Thinking…</div>}
+        {loading && (
+          <div className="chat-loading">
+            <span className="chat-loading-dot" />
+            <span className="chat-loading-dot" />
+            <span className="chat-loading-dot" />
+          </div>
+        )}
       </div>
+
+      <div className="chat-suggestion-container">
+        {suggestions.map((s, idx) => (
+          <button
+            key={idx}
+            type="button"
+            className="chat-suggestion-pill"
+            onClick={() => handleSend(s)}
+            disabled={loading}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
       <form onSubmit={send} style={{ display: "flex", gap: 8 }}>
         <input
           className="input"
-          placeholder="e.g. Am I safe to miss class tomorrow?"
+          placeholder="Ask a question..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
           style={{ minWidth: 0 }}
+          disabled={loading}
         />
-        <button className="btn" type="submit" disabled={loading} style={{ flexShrink: 0 }}>Send</button>
+        <button className="btn" type="submit" disabled={loading || !input.trim()} style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>Send</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
       </form>
     </div>
   );
