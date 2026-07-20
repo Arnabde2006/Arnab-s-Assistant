@@ -175,6 +175,11 @@ button {
   gap: 4px;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
+  /* Stick to viewport so bottom actions are always visible regardless of page height */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .sidebar.collapsed {
