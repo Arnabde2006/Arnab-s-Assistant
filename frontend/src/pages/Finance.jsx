@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import { useAuth } from "../context/AuthContext.jsx";
+import FileUpload from "../components/FileUpload.jsx";
 
 const CATEGORY_LABELS = {
   food: "Food",
@@ -213,15 +214,28 @@ export default function Finance() {
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
             A bank statement PDF or a Google Pay/PhonePe/Paytm payment screenshot — transactions are auto-added and categorized, and you can edit or delete any of them below.
           </p>
-          <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ marginBottom: 10 }} />
+          <FileUpload
+            id="finance-upload"
+            accept="image/*,application/pdf"
+            file={file}
+            onChange={setFile}
+            placeholder="Drag & drop your bank statement or UPI screenshot here, or click to browse"
+            helpText="Supports bank statement PDF or Google Pay / PhonePe / Paytm screenshot"
+          />
+          <div style={{ height: 12 }} />
           {uploadError && <div className="error-text" style={{ marginBottom: 10 }}>{uploadError}</div>}
           {uploadResult && (
             <div style={{ fontSize: 12, color: "var(--present)", marginBottom: 10 }}>
               Added {uploadResult.count} transaction(s) — check and edit them below if anything looks off.
             </div>
           )}
-          <button className="btn" type="submit" disabled={uploadLoading}>{uploadLoading ? "Reading…" : "Upload"}</button>
+          <div style={{ display: "flex", justifyContent: "center" }}>
+            <button className="btn" type="submit" disabled={uploadLoading} style={{ minWidth: 140 }}>
+              {uploadLoading ? "Reading…" : "Upload"}
+            </button>
+          </div>
         </form>
+
       </div>
 
       <div className="card">

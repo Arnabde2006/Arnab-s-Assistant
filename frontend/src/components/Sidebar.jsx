@@ -12,7 +12,9 @@ import {
   Timer,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Wallet,
+  ArrowLeftRight
 } from "lucide-react";
 
 const links = [
@@ -22,6 +24,8 @@ const links = [
   { to: "/timetable", label: "Timetable", icon: CalendarDays },
   { to: "/exams", label: "Exam timetable", icon: BookOpen },
   { to: "/grades", label: "Grades", icon: GraduationCap },
+  { to: "/finance", label: "Finance", icon: Wallet },
+  { to: "/debts", label: "Debts", icon: ArrowLeftRight },
   { to: "/pomodoro", label: "Focus timer", icon: Timer },
 ];
 
