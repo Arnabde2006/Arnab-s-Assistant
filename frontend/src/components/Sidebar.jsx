@@ -14,7 +14,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Wallet,
-  ArrowLeftRight
+  ArrowLeftRight,
+  User
 } from "lucide-react";
 
 const links = [
@@ -27,6 +28,7 @@ const links = [
   { to: "/finance", label: "Finance", icon: Wallet },
   { to: "/debts", label: "Debts", icon: ArrowLeftRight },
   { to: "/pomodoro", label: "Focus timer", icon: Timer },
+  { to: "/profile", label: "Profile", icon: User },
 ];
 
 export default function Sidebar() {

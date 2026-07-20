@@ -14,7 +14,8 @@ import {
   Timer,
   LogOut,
   Sun,
-  Moon
+  Moon,
+  User
 } from "lucide-react";
 
 const links = [
@@ -27,6 +28,7 @@ const links = [
   { to: "/finance", label: "Finance", icon: Wallet },
   { to: "/debts", label: "Debts", icon: ArrowLeftRight },
   { to: "/pomodoro", label: "Timer", icon: Timer },
+  { to: "/profile", label: "Profile", icon: User },
 ];
 
 

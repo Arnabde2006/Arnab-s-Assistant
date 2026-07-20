@@ -16,6 +16,7 @@ import Grades from "./pages/Grades.jsx";
 import Finance from "./pages/Finance.jsx";
 import Debts from "./pages/Debts.jsx";
 import Pomodoro from "./pages/Pomodoro.jsx";
+import Profile from "./pages/Profile.jsx";
 
 function ProtectedShell({ children }) {
   const { user, loading } = useAuth();
@@ -46,6 +47,7 @@ export default function App() {
       <Route path="/finance" element={<ProtectedShell><Finance /></ProtectedShell>} />
       <Route path="/debts" element={<ProtectedShell><Debts /></ProtectedShell>} />
       <Route path="/pomodoro" element={<ProtectedShell><Pomodoro /></ProtectedShell>} />
+      <Route path="/profile" element={<ProtectedShell><Profile /></ProtectedShell>} />
     </Routes>
   );
 }
