@@ -732,6 +732,8 @@ button {
     background: var(--bg-elevated);
     border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 
   .mobile-nav-inner {
@@ -787,6 +789,8 @@ button {
     padding-bottom: calc(20px + env(safe-area-inset-bottom));
     max-height: 75vh;
     overflow-y: auto;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 
   .mobile-sheet-link {
