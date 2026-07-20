@@ -28,24 +28,85 @@ export default function Attendance() {
   const [holidays, setHolidays] = useState([]);
   const [holidayFile, setHolidayFile] = useState(null);
   const [uploadLoading, setUploadLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [uploadError, setUploadError] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
   const today = toISO(new Date());
 
   async function refresh() {
-    const [sum, recs, hols] = await Promise.all([
-      api.get("/attendance/summary"),
-      api.get("/attendance"),
-      api.get("/holidays"),
-    ]);
-    setSummary(sum);
-    setRecords(recs.records);
-    setHolidays(hols.holidays);
+    try {
+      const [sum, recs, hols] = await Promise.all([
+        api.get("/attendance/summary"),
+        api.get("/attendance"),
+        api.get("/holidays"),
+      ]);
+      setSummary(sum);
+      setRecords(recs.records);
+      setHolidays(hols.holidays);
+    } finally {
+      setPageLoading(false);
+    }
   }
 
   useEffect(() => {
     refresh().catch(() => {});
   }, []);
+
+  if (pageLoading) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Attendance</h1>
+            <p className="page-subtitle">Retrieving attendance logs...</p>
+          </div>
+        </div>
+
+        <div className="grid grid-2" style={{ marginBottom: 20 }}>
+          <div className="card" style={{ display: "flex", gap: 20, alignItems: "center" }}>
+            <div className="skeleton-pulse" style={{ width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
+            <div style={{ flexGrow: 1 }}>
+              <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 14, borderRadius: 4 }} />
+              <div className="skeleton-pulse skeleton-text" style={{ width: "70%", height: 14, borderRadius: 4 }} />
+              <div className="skeleton-pulse skeleton-text" style={{ width: "50%", height: 14, borderRadius: 4 }} />
+            </div>
+          </div>
+          <div className="card" style={{ display: "flex", gap: 20, alignItems: "center" }}>
+            <div className="skeleton-pulse" style={{ width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
+            <div style={{ flexGrow: 1 }}>
+              <div className="skeleton-pulse skeleton-text" style={{ width: "50%", height: 14, borderRadius: 4 }} />
+              <div className="skeleton-pulse skeleton-text" style={{ width: "60%", height: 14, borderRadius: 4 }} />
+              <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 14, borderRadius: 4 }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-2" style={{ marginBottom: 20 }}>
+          <div className="card">
+            <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 14, borderRadius: 4, marginBottom: 16 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              {[1, 2, 3, 4].map(n => (
+                <div key={n} className="skeleton-pulse" style={{ width: 75, height: 38, borderRadius: 8 }} />
+              ))}
+            </div>
+          </div>
+          <div className="card">
+            <div className="skeleton-pulse skeleton-text" style={{ width: "30%", height: 14, borderRadius: 4, marginBottom: 12 }} />
+            <div className="skeleton-pulse" style={{ width: "100%", height: 78, borderRadius: 16 }} />
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="skeleton-pulse skeleton-text" style={{ width: "20%", height: 14, borderRadius: 4, marginBottom: 16 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[1, 2, 3, 4, 5].map(n => (
+              <div key={n} className="skeleton-pulse" style={{ width: "100%", height: 36, borderRadius: 8 }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   async function mark(date, key) {
     if (key === "no_college") {

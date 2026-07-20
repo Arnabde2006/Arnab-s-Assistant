@@ -7,19 +7,56 @@ export default function Timetable() {
   const [subjects, setSubjects] = useState([]);
   const [slots, setSlots] = useState([]);
   const [form, setForm] = useState({ subjectId: "", dayOfWeek: 1, startTime: "09:00", endTime: "10:00", room: "" });
+  const [pageLoading, setPageLoading] = useState(true);
 
   async function refresh() {
-    const [s, t] = await Promise.all([api.get("/subjects"), api.get("/timetable")]);
-    setSubjects(s.subjects);
-    setSlots(t.slots);
-    if (s.subjects.length && !form.subjectId) {
-      setForm((f) => ({ ...f, subjectId: s.subjects[0].id }));
+    try {
+      const [s, t] = await Promise.all([api.get("/subjects"), api.get("/timetable")]);
+      setSubjects(s.subjects);
+      setSlots(t.slots);
+      if (s.subjects.length && !form.subjectId) {
+        setForm((f) => ({ ...f, subjectId: s.subjects[0].id }));
+      }
+    } finally {
+      setPageLoading(false);
     }
   }
 
   useEffect(() => {
     refresh().catch(() => {});
   }, []);
+
+  if (pageLoading) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Timetable</h1>
+            <p className="page-subtitle">Retrieving weekly class schedule...</p>
+          </div>
+        </div>
+
+        <div className="card" style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <div key={n} style={{ flex: 1, minWidth: 100 }}>
+              <div className="skeleton-pulse skeleton-text" style={{ width: "50%", height: 12, borderRadius: 4 }} />
+              <div className="skeleton-pulse skeleton-text" style={{ width: "100%", height: 38, borderRadius: 8, margin: 0 }} />
+            </div>
+          ))}
+        </div>
+
+        <div className="grid timetable-grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
+          {DAYS.map((d) => (
+            <div key={d} className="card" style={{ minHeight: 140 }}>
+              <div className="label" style={{ marginBottom: 10 }}>{d}</div>
+              <div className="skeleton-pulse skeleton-text" style={{ width: "80%", height: 14, borderRadius: 4, marginBottom: 6 }} />
+              <div className="skeleton-pulse skeleton-text" style={{ width: "60%", height: 10, borderRadius: 4 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   async function addSlot(e) {
     e.preventDefault();
