@@ -161,7 +161,7 @@ button {
 }
 
 .sidebar {
-  width: 220px;
+  width: 250px;
   flex-shrink: 0;
   background: var(--bg-elevated);
   border-right: 1px solid var(--border);
