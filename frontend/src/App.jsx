@@ -1,5 +1,5 @@
-import React from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./context/AuthContext.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import MobileNav from "./components/MobileNav.jsx";
@@ -29,6 +29,35 @@ function ProtectedShell({ children }) {
 }
 
 export default function App() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const path = location.pathname;
+    const titleMap = {
+      "/": "Dashboard",
+      "/attendance": "Attendance",
+      "/todos": "To-do & Calendar",
+      "/timetable": "Timetable",
+      "/exams": "Exam Timetable",
+      "/grades": "Grades",
+      "/finance": "Finance",
+      "/debts": "Debts",
+      "/pomodoro": "Focus Timer",
+      "/profile": "Profile",
+      "/login": "Log in",
+      "/register": "Register",
+      "/view": "View Only Access",
+    };
+
+    if (path.startsWith("/view/")) {
+      document.title = "View Dashboard - Assistant";
+      return;
+    }
+
+    const pageTitle = titleMap[path] || "Assistant";
+    document.title = `${pageTitle} - Assistant`;
+  }, [location]);
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
