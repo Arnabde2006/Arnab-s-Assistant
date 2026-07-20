@@ -19,6 +19,7 @@ export default function Todos() {
   const [todos, setTodos] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [showHolidays, setShowHolidays] = useState(() => localStorage.getItem("showHolidays") !== "false");
+  const [pageLoading, setPageLoading] = useState(true);
 
   useEffect(() => {
     localStorage.setItem("showHolidays", String(showHolidays));
@@ -30,17 +31,54 @@ export default function Todos() {
   const rangeEnd = toISO(rangeEndDate);
 
   async function refresh() {
-    const [todosData, holidaysData] = await Promise.all([
-      api.get(`/todos?from=${rangeStart}&to=${rangeEnd}`),
-      api.get(`/holidays?from=${rangeStart}&to=${rangeEnd}`),
-    ]);
-    setTodos(todosData.todos);
-    setHolidays(holidaysData.holidays);
+    try {
+      const [todosData, holidaysData] = await Promise.all([
+        api.get(`/todos?from=${rangeStart}&to=${rangeEnd}`),
+        api.get(`/holidays?from=${rangeStart}&to=${rangeEnd}`),
+      ]);
+      setTodos(todosData.todos);
+      setHolidays(holidaysData.holidays);
+    } finally {
+      setPageLoading(false);
+    }
   }
 
   useEffect(() => {
     refresh().catch(() => {});
   }, []);
+
+  if (pageLoading) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">To‑do &amp; Calendar</h1>
+            <p className="page-subtitle">Retrieving planner items...</p>
+          </div>
+        </div>
+
+        <div className="card" style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+          <div className="skeleton-pulse" style={{ flex: 1, minWidth: 200, height: 38, borderRadius: 8 }} />
+          <div className="skeleton-pulse" style={{ width: 120, height: 38, borderRadius: 8 }} />
+          <div className="skeleton-pulse" style={{ width: 70, height: 38, borderRadius: 8 }} />
+        </div>
+
+        <div className="planner" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <div key={n} className="planner-row" style={{ minHeight: 60, display: "flex", alignItems: "center" }}>
+              <div className="planner-date" style={{ display: "flex", flexDirection: "column", gap: 4, width: 60 }}>
+                <div className="skeleton-pulse skeleton-text" style={{ width: "80%", height: 10, borderRadius: 4 }} />
+                <div className="skeleton-pulse skeleton-text" style={{ width: "50%", height: 16, borderRadius: 4 }} />
+              </div>
+              <div className="planner-items" style={{ flexGrow: 1, paddingLeft: 16 }}>
+                <div className="skeleton-pulse skeleton-text" style={{ width: n % 2 === 0 ? "40%" : "20%", height: 14, borderRadius: 4, margin: 0 }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   async function addNote(e) {
     e.preventDefault();

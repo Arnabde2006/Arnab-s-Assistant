@@ -7,18 +7,52 @@ export default function ExamTimetable() {
   const [courses, setCourses] = useState("");
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastResult, setLastResult] = useState(null);
   const [exams, setExams] = useState([]);
 
   async function refresh() {
-    const d = await api.get("/ai/exams");
-    setExams(d.exams);
+    try {
+      const d = await api.get("/ai/exams");
+      setExams(d.exams);
+    } finally {
+      setPageLoading(false);
+    }
   }
 
   useEffect(() => {
     refresh().catch(() => {});
   }, []);
+
+  if (pageLoading) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Exam timetable</h1>
+            <p className="page-subtitle">Retrieving upcoming exams...</p>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="skeleton-pulse skeleton-text" style={{ width: "30%", height: 14, borderRadius: 4 }} />
+          <div className="skeleton-pulse skeleton-text" style={{ width: "100%", height: 38, borderRadius: 999 }} />
+          <div className="skeleton-pulse skeleton-text" style={{ width: "20%", height: 14, borderRadius: 4 }} />
+          <div className="skeleton-pulse" style={{ width: "100%", height: 78, borderRadius: 16 }} />
+        </div>
+
+        <div className="card">
+          <div className="skeleton-pulse skeleton-text" style={{ width: "20%", height: 14, borderRadius: 4, marginBottom: 16 }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[1, 2, 3].map(n => (
+              <div key={n} className="skeleton-pulse" style={{ width: "100%", height: 44, borderRadius: 8 }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   async function handleUpload(e) {
     e.preventDefault();

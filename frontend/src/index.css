@@ -27,6 +27,8 @@
   --accent-text: #ffffff;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   --holiday-bg: rgba(140, 148, 179, 0.08);
+  --skeleton-bg: #151d33;
+  --skeleton-glow: #1b2540;
 }
 
 /* Parchment theme — clean white, minimal */
@@ -44,6 +46,8 @@
   --accent-text: #ffffff;
   --shadow: 0 16px 48px rgba(25, 27, 35, 0.08);
   --holiday-bg: rgba(255, 92, 57, 0.05);
+  --skeleton-bg: rgba(30, 34, 41, 0.08);
+  --skeleton-glow: rgba(30, 34, 41, 0.16);
 
   --radius-sm: 12px;
   --radius-md: 24px;
@@ -1136,7 +1140,7 @@ button {
 
 /* Skeleton Loader Styles */
 .skeleton-pulse {
-  background: linear-gradient(90deg, var(--panel) 25%, var(--panel-hover) 50%, var(--panel) 75%);
+  background: linear-gradient(90deg, var(--skeleton-bg) 25%, var(--skeleton-glow) 50%, var(--skeleton-bg) 75%);
   background-size: 200% 100%;
   animation: skeletonLoading 1.5s infinite ease-in-out;
 }
