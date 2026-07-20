@@ -95,11 +95,30 @@ router.get("/me", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 router.put("/me", requireAuth, asyncHandler(async (req, res) => {
-  const { name, attendanceGoal } = req.body;
+  const { name, attendanceGoal, currentPassword, newPassword } = req.body;
   if (attendanceGoal !== undefined && (typeof attendanceGoal !== "number" || attendanceGoal < 1 || attendanceGoal > 100)) {
     return res.status(400).json({ error: "attendanceGoal must be a number between 1 and 100" });
   }
   const pool = getPool();
+
+  if (newPassword) {
+    if (!currentPassword) {
+      return res.status(400).json({ error: "Current password is required to set a new password" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "New password must be at least 6 characters" });
+    }
+    const userRes = await pool.query("SELECT password_hash FROM users WHERE id = $1", [req.userId]);
+    const userRow = userRes.rows[0];
+    if (!userRow) return res.status(404).json({ error: "User not found" });
+    const valid = await bcrypt.compare(currentPassword, userRow.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: "Invalid current password" });
+    }
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await pool.query("UPDATE users SET password_hash = $1 WHERE id = $2", [newHash, req.userId]);
+  }
+
   const result = await pool.query(
     `UPDATE users SET
        name = COALESCE($1, name),

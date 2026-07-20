@@ -12,7 +12,8 @@ import {
   Timer,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  User
 } from "lucide-react";
 
 const links = [
@@ -23,6 +24,7 @@ const links = [
   { to: "/exams", label: "Exam timetable", icon: BookOpen },
   { to: "/grades", label: "Grades", icon: GraduationCap },
   { to: "/pomodoro", label: "Focus timer", icon: Timer },
+  { to: "/profile", label: "Profile", icon: User },
 ];
 
 export default function Sidebar() {

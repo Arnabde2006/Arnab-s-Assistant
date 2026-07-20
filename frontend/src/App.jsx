@@ -14,6 +14,7 @@ import Timetable from "./pages/Timetable.jsx";
 import ExamTimetable from "./pages/ExamTimetable.jsx";
 import Grades from "./pages/Grades.jsx";
 import Pomodoro from "./pages/Pomodoro.jsx";
+import Profile from "./pages/Profile.jsx";
 
 function ProtectedShell({ children }) {
   const { user, loading } = useAuth();
@@ -42,6 +43,7 @@ export default function App() {
       <Route path="/exams" element={<ProtectedShell><ExamTimetable /></ProtectedShell>} />
       <Route path="/grades" element={<ProtectedShell><Grades /></ProtectedShell>} />
       <Route path="/pomodoro" element={<ProtectedShell><Pomodoro /></ProtectedShell>} />
+      <Route path="/profile" element={<ProtectedShell><Profile /></ProtectedShell>} />
     </Routes>
   );
 }

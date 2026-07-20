@@ -12,7 +12,8 @@ import {
   Timer,
   LogOut,
   Sun,
-  Moon
+  Moon,
+  User
 } from "lucide-react";
 
 const links = [
@@ -23,6 +24,7 @@ const links = [
   { to: "/exams", label: "Exams", icon: BookOpen },
   { to: "/grades", label: "Grades", icon: GraduationCap },
   { to: "/pomodoro", label: "Timer", icon: Timer },
+  { to: "/profile", label: "Profile", icon: User },
 ];
 
 export default function MobileNav() {
