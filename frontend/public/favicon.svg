@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="coralGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff7b5a" />
+      <stop offset="100%" stop-color="#ff5c39" />
+    </linearGradient>
+  </defs>
+  <circle cx="16" cy="16" r="16" fill="url(#coralGrad)" />
+  <text x="15.5" y="22.5" font-family="'Outfit', 'Inter', sans-serif" font-size="19" font-weight="800" fill="#ffffff" text-anchor="middle">A</text>
+  <circle cx="23" cy="23" r="2.5" fill="#ffffff" />
+</svg>
