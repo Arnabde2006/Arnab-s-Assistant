@@ -740,10 +740,20 @@ button {
     display: flex;
     align-items: stretch;
     height: 60px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE 10+ */
+    padding: 0 8px;
+  }
+
+  .mobile-nav-inner::-webkit-scrollbar {
+    display: none; /* Safari & Chrome */
   }
 
   .mobile-nav-item {
-    flex: 1;
+    flex: 0 0 68px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -756,6 +766,7 @@ button {
     font-weight: 500;
     text-decoration: none;
     padding: 6px 2px;
+    cursor: pointer;
   }
 
   .mobile-nav-item .icon {
