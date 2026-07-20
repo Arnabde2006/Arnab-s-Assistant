@@ -22,6 +22,7 @@ function toUserDTO(row) {
     name: row.name,
     email: row.email,
     attendanceGoal: row.attendance_goal,
+    monthlyBudget: row.monthly_budget !== null && row.monthly_budget !== undefined ? Number(row.monthly_budget) : null,
     viewToken: row.view_token,
   };
 }
@@ -44,7 +45,7 @@ router.post("/register", async (req, res) => {
     const viewToken = newViewToken();
     const result = await pool.query(
       `INSERT INTO users (name, email, password_hash, view_token) VALUES ($1, $2, $3, $4)
-       RETURNING id, name, email, attendance_goal, view_token`,
+       RETURNING id, name, email, attendance_goal, monthly_budget, view_token`,
       [name, email.toLowerCase(), passwordHash, viewToken]
     );
     const user = result.rows[0];
@@ -86,7 +87,7 @@ router.post("/login", async (req, res) => {
 router.get("/me", requireAuth, asyncHandler(async (req, res) => {
   const pool = getPool();
   const result = await pool.query(
-    "SELECT id, name, email, attendance_goal, view_token FROM users WHERE id = $1",
+    "SELECT id, name, email, attendance_goal, monthly_budget, view_token FROM users WHERE id = $1",
     [req.userId]
   );
   const user = result.rows[0];
@@ -95,18 +96,22 @@ router.get("/me", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 router.put("/me", requireAuth, asyncHandler(async (req, res) => {
-  const { name, attendanceGoal } = req.body;
+  const { name, attendanceGoal, monthlyBudget } = req.body;
   if (attendanceGoal !== undefined && (typeof attendanceGoal !== "number" || attendanceGoal < 1 || attendanceGoal > 100)) {
     return res.status(400).json({ error: "attendanceGoal must be a number between 1 and 100" });
+  }
+  if (monthlyBudget !== undefined && monthlyBudget !== null && (typeof monthlyBudget !== "number" || monthlyBudget <= 0)) {
+    return res.status(400).json({ error: "monthlyBudget must be a positive number, or null to turn it off" });
   }
   const pool = getPool();
   const result = await pool.query(
     `UPDATE users SET
        name = COALESCE($1, name),
-       attendance_goal = COALESCE($2, attendance_goal)
-     WHERE id = $3
-     RETURNING id, name, email, attendance_goal, view_token`,
-    [name ?? null, attendanceGoal ?? null, req.userId]
+       attendance_goal = COALESCE($2, attendance_goal),
+       monthly_budget = CASE WHEN $3 THEN $4 ELSE monthly_budget END
+     WHERE id = $5
+     RETURNING id, name, email, attendance_goal, monthly_budget, view_token`,
+    [name ?? null, attendanceGoal ?? null, monthlyBudget !== undefined, monthlyBudget ?? null, req.userId]
   );
   res.json({ user: toUserDTO(result.rows[0]) });
 }));
@@ -116,7 +121,7 @@ router.post("/view-token/regenerate", requireAuth, asyncHandler(async (req, res)
   const pool = getPool();
   const viewToken = newViewToken();
   const result = await pool.query(
-    "UPDATE users SET view_token = $1 WHERE id = $2 RETURNING id, name, email, attendance_goal, view_token",
+    "UPDATE users SET view_token = $1 WHERE id = $2 RETURNING id, name, email, attendance_goal, monthly_budget, view_token",
     [viewToken, req.userId]
   );
   res.json({ user: toUserDTO(result.rows[0]) });
