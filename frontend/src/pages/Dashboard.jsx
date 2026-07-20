@@ -139,18 +139,36 @@ function ViewLinkCard() {
   );
 }
 
+const INITIAL_MESSAGE = { role: "assistant", text: "Hi! Ask me anything about your classes, attendance, tasks, or exams." };
+const HISTORY_KEY = "arnab-chat-history";
+
 function ChatCard() {
-  const [messages, setMessages] = useState([
-    { role: "assistant", text: "Hi! Ask me anything about your classes, attendance, tasks, or exams." },
-  ]);
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem(HISTORY_KEY);
+      return saved ? JSON.parse(saved) : [INITIAL_MESSAGE];
+    } catch {
+      return [INITIAL_MESSAGE];
+    }
+  });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState(""); // live token buffer
   const scrollRef = useRef(null);
 
+  // Persist messages to localStorage on every update
+  useEffect(() => {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(messages)); } catch {}
+  }, [messages]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, streamingText]);
+
+  function clearHistory() {
+    setMessages([INITIAL_MESSAGE]);
+    try { localStorage.removeItem(HISTORY_KEY); } catch {}
+  }
 
   const suggestions = [
     "Am I safe to miss class tomorrow?",
@@ -226,8 +244,40 @@ function ChatCard() {
 
   return (
     <div className="card">
-      <div className="label" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ color: "var(--accent)" }}>✦</span> Ask Arnab's Assistant AI
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div className="label" style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "var(--accent)" }}>✦</span> Ask Arnab's Assistant AI
+        </div>
+        <button
+          type="button"
+          onClick={clearHistory}
+          disabled={loading || messages.length <= 1}
+          title="Clear chat history"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border-strong)",
+            borderRadius: "999px",
+            color: messages.length <= 1 ? "var(--text-muted)" : "var(--absent)",
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "4px 12px",
+            cursor: messages.length <= 1 ? "default" : "pointer",
+            opacity: messages.length <= 1 ? 0.45 : 1,
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            transition: "opacity 0.2s, color 0.2s",
+            letterSpacing: "0.03em",
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+          </svg>
+          Clear history
+        </button>
       </div>
       
       <div ref={scrollRef} className="chat-container">
