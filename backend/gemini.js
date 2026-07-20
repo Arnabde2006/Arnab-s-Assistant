@@ -1,16 +1,18 @@
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+/**
+ * AI gateway — races Gemini, Groq, and OpenRouter in parallel.
+ * The first provider to succeed wins; the others are abandoned.
+ * 
+ * For streaming (SSE) the caller passes `onChunk(text)` — each provider
+ * that supports streaming will call it incrementally.  For non-streaming
+ * callers (grade-card / exam-timetable JSON extraction) omit `onChunk`.
+ */
 
-function endpoint() {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error("GEMINI_API_KEY is not set in .env");
-  }
-  return `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+// ─── helpers ─────────────────────────────────────────────────────────────────
+
+function hasVision(parts) {
+  return parts.some((p) => p.inline_data);
 }
 
-/**
- * Helper to convert Gemini parts format into OpenAI-compatible Chat Completions messages.
- */
 function convertPartsToMessages(systemInstruction, parts) {
   const messages = [];
   if (systemInstruction) {
@@ -22,13 +24,10 @@ function convertPartsToMessages(systemInstruction, parts) {
     if (part.text) {
       content.push({ type: "text", text: part.text });
     } else if (part.inline_data) {
-      const mime = part.inline_data.mime_type;
-      const base64 = part.inline_data.data;
+      const { mime_type: mime, data: base64 } = part.inline_data;
       content.push({
         type: "image_url",
-        image_url: {
-          url: `data:${mime};base64,${base64}`
-        }
+        image_url: { url: `data:${mime};base64,${base64}` },
       });
     }
   }
@@ -36,16 +35,22 @@ function convertPartsToMessages(systemInstruction, parts) {
   if (content.length === 1 && content[0].type === "text") {
     messages.push({ role: "user", content: content[0].text });
   } else {
-    messages.push({ role: "user", content: content });
+    messages.push({ role: "user", content });
   }
-
   return messages;
 }
 
-/**
- * Attempt primary Gemini API call.
- */
-async function tryGemini({ systemInstruction, parts, jsonMode }) {
+// ─── Gemini ───────────────────────────────────────────────────────────────────
+
+function geminiEndpoint(stream = false) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not set");
+  const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+  const method = stream ? "streamGenerateContent" : "generateContent";
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}?key=${key}${stream ? "&alt=sse" : ""}`;
+}
+
+async function tryGemini({ systemInstruction, parts, jsonMode, onChunk }) {
   const body = {
     contents: [{ role: "user", parts }],
     ...(systemInstruction
@@ -54,129 +59,254 @@ async function tryGemini({ systemInstruction, parts, jsonMode }) {
     ...(jsonMode ? { generationConfig: { responseMimeType: "application/json" } } : {}),
   };
 
-  const res = await fetch(endpoint(), {
+  const useStream = !!onChunk && !jsonMode;
+  const res = await fetch(geminiEndpoint(useStream), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 
-  const data = await res.json();
-
   if (!res.ok) {
-    const message = data?.error?.message || "Gemini API request failed";
-    throw new Error(message);
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error?.message || `Gemini HTTP ${res.status}`);
   }
 
-  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-  return text;
+  if (!useStream) {
+    const data = await res.json();
+    return data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  }
+
+  // Streaming: parse SSE
+  let full = "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop(); // keep incomplete line
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (raw === "[DONE]") continue;
+      try {
+        const obj = JSON.parse(raw);
+        const chunk =
+          obj?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+        if (chunk) {
+          full += chunk;
+          onChunk(chunk);
+        }
+      } catch { /* malformed chunk — skip */ }
+    }
+  }
+  return full;
 }
 
-/**
- * Fallback to Groq API.
- */
-async function callGroq({ systemInstruction, parts, jsonMode }) {
+// ─── Groq ─────────────────────────────────────────────────────────────────────
+
+async function tryGroq({ systemInstruction, parts, jsonMode, onChunk }) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("GROQ_API_KEY not configured");
 
-  const hasVision = parts.some(p => p.inline_data);
-  const model = hasVision 
-    ? (process.env.GROQ_VISION_MODEL || "llama-3.2-11b-vision-preview") 
+  const vision = hasVision(parts);
+  const model = vision
+    ? (process.env.GROQ_VISION_MODEL || "llama-3.2-11b-vision-preview")
     : (process.env.GROQ_MODEL || "llama-3.3-70b-versatile");
 
+  const useStream = !!onChunk && !jsonMode && !vision;
   const messages = convertPartsToMessages(systemInstruction, parts);
+
   const body = {
     model,
     messages,
-    ...(jsonMode ? { response_format: { type: "json_object" } } : {})
+    stream: useStream,
+    ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
   };
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
+      Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
-  const data = await res.json();
   if (!res.ok) {
-    const errorMsg = data?.error?.message || "Groq API request failed";
-    throw new Error(errorMsg);
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error?.message || `Groq HTTP ${res.status}`);
   }
 
-  return data?.choices?.[0]?.message?.content || "";
+  if (!useStream) {
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || "";
+  }
+
+  // Streaming
+  let full = "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (raw === "[DONE]") continue;
+      try {
+        const obj = JSON.parse(raw);
+        const chunk = obj?.choices?.[0]?.delta?.content || "";
+        if (chunk) {
+          full += chunk;
+          onChunk(chunk);
+        }
+      } catch { /* skip */ }
+    }
+  }
+  return full;
 }
 
-/**
- * Fallback to OpenRouter API.
- */
-async function callOpenRouter({ systemInstruction, parts, jsonMode }) {
+// ─── OpenRouter ───────────────────────────────────────────────────────────────
+
+async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
 
-  const hasVision = parts.some(p => p.inline_data);
-  const model = hasVision 
-    ? (process.env.OPENROUTER_VISION_MODEL || "google/gemini-2.5-flash:free") 
+  const vision = hasVision(parts);
+  const model = vision
+    ? (process.env.OPENROUTER_VISION_MODEL || "google/gemini-2.0-flash:free")
     : (process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct:free");
 
+  const useStream = !!onChunk && !jsonMode;
   const messages = convertPartsToMessages(systemInstruction, parts);
+
   const body = {
     model,
     messages,
-    ...(jsonMode ? { response_format: { type: "json_object" } } : {})
+    stream: useStream,
+    ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
   };
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-      "HTTP-Referer": "http://localhost:5173",
-      "X-Title": "Arnab's Assistant"
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": process.env.CLIENT_ORIGIN || "http://localhost:5173",
+      "X-Title": "Arnab's Assistant",
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
-  const data = await res.json();
   if (!res.ok) {
-    const errorMsg = data?.error?.message || "OpenRouter API request failed";
-    throw new Error(errorMsg);
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error?.message || `OpenRouter HTTP ${res.status}`);
   }
 
-  return data?.choices?.[0]?.message?.content || "";
+  if (!useStream) {
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || "";
+  }
+
+  // Streaming
+  let full = "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (raw === "[DONE]") continue;
+      try {
+        const obj = JSON.parse(raw);
+        const chunk = obj?.choices?.[0]?.delta?.content || "";
+        if (chunk) {
+          full += chunk;
+          onChunk(chunk);
+        }
+      } catch { /* skip */ }
+    }
+  }
+  return full;
 }
 
+// ─── Public gateway ───────────────────────────────────────────────────────────
+
 /**
- * Main completion gateway with Groq and OpenRouter fallbacks.
+ * callGemini({ systemInstruction, parts, jsonMode, onChunk? })
+ *
+ * Races all configured providers.  First to return a non-empty result wins.
+ * If `onChunk` is supplied the winning provider streams tokens into it.
+ * Falls back gracefully when providers aren't configured or fail.
  */
-export async function callGemini({ systemInstruction, parts, jsonMode }) {
-  try {
-    return await tryGemini({ systemInstruction, parts, jsonMode });
-  } catch (geminiError) {
-    console.warn("Gemini API failed. Attempting fallback. Error:", geminiError.message);
+export async function callGemini({ systemInstruction, parts, jsonMode = false, onChunk }) {
+  const vision = hasVision(parts);
 
-    // Try Groq fallback
-    if (process.env.GROQ_API_KEY) {
-      try {
-        console.log("Using Groq API fallback...");
-        return await callGroq({ systemInstruction, parts, jsonMode });
-      } catch (groqError) {
-        console.warn("Groq fallback failed. Error:", groqError.message);
-      }
-    }
+  // Build the list of providers to try in parallel.
+  // For vision/JSON calls we skip streaming (not all providers support it).
+  const providers = [];
 
-    // Try OpenRouter fallback
-    if (process.env.OPENROUTER_API_KEY) {
-      try {
-        console.log("Using OpenRouter API fallback...");
-        return await callOpenRouter({ systemInstruction, parts, jsonMode });
-      } catch (openRouterError) {
-        console.warn("OpenRouter fallback failed. Error:", openRouterError.message);
-      }
-    }
-
-    // Re-throw original Gemini error if fallbacks were not configured or failed
-    throw geminiError;
+  if (process.env.GEMINI_API_KEY) {
+    providers.push(() =>
+      tryGemini({ systemInstruction, parts, jsonMode, onChunk }).catch((e) => {
+        console.warn("[Gemini] failed:", e.message);
+        return null;
+      })
+    );
   }
+
+  if (process.env.GROQ_API_KEY) {
+    providers.push(() =>
+      tryGroq({ systemInstruction, parts, jsonMode, onChunk }).catch((e) => {
+        console.warn("[Groq] failed:", e.message);
+        return null;
+      })
+    );
+  }
+
+  if (process.env.OPENROUTER_API_KEY) {
+    providers.push(() =>
+      tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }).catch((e) => {
+        console.warn("[OpenRouter] failed:", e.message);
+        return null;
+      })
+    );
+  }
+
+  if (providers.length === 0) {
+    throw new Error("No AI provider API keys configured. Set GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.");
+  }
+
+  // Race: Promise.any resolves with the first non-null result.
+  // We wrap each provider so that null (failed) is treated as a rejection for Promise.any.
+  const result = await Promise.any(
+    providers.map((fn) =>
+      fn().then((val) => {
+        if (val === null || val === undefined || val === "") {
+          throw new Error("empty");
+        }
+        return val;
+      })
+    )
+  ).catch(() => {
+    throw new Error("All AI providers failed. Please check your API keys and try again.");
+  });
+
+  return result;
 }
