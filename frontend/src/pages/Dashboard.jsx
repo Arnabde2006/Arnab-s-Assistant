@@ -9,15 +9,69 @@ export default function Dashboard() {
   const [attendance, setAttendance] = useState(null);
   const [todayTodos, setTodayTodos] = useState([]);
   const [upcomingExams, setUpcomingExams] = useState([]);
+  const [pageLoading, setPageLoading] = useState(true);
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
-    api.get("/dashboard").then(setStats).catch(() => {});
-    api.get("/attendance/summary").then(setAttendance).catch(() => {});
-    api.get(`/todos?from=${todayStr}&to=${todayStr}`).then((d) => setTodayTodos(d.todos)).catch(() => {});
-    api.get("/ai/exams").then((d) => setUpcomingExams(d.exams.filter((e) => e.exam_date >= todayStr).slice(0, 4))).catch(() => {});
+    Promise.all([
+      api.get("/dashboard").then(setStats).catch(() => {}),
+      api.get("/attendance/summary").then(setAttendance).catch(() => {}),
+      api.get(`/todos?from=${todayStr}&to=${todayStr}`).then((d) => setTodayTodos(d.todos || [])).catch(() => {}),
+      api.get("/ai/exams").then((d) => setUpcomingExams(d.exams ? d.exams.filter((e) => e.exam_date >= todayStr).slice(0, 4) : [])).catch(() => {}),
+    ]).finally(() => {
+      setPageLoading(false);
+    });
   }, []);
+
+  if (pageLoading) {
+    return (
+      <div>
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">
+              {greeting()}, {user?.name?.split(" ")[0] || "there"}
+            </h1>
+            <p className="page-subtitle">Loading your dashboard...</p>
+          </div>
+        </div>
+
+        <div className="grid grid-3" style={{ marginBottom: 20 }}>
+          <div className="card">
+            <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 12 }} />
+            <div className="skeleton-pulse skeleton-title" style={{ width: "50%", height: 32, margin: "12px 0 6px" }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "65%", height: 12 }} />
+          </div>
+          <div className="card">
+            <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 12 }} />
+            <div className="skeleton-pulse skeleton-title" style={{ width: "50%", height: 32, margin: "12px 0 6px" }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "65%", height: 12 }} />
+          </div>
+          <div className="card">
+            <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 12 }} />
+            <div className="skeleton-pulse skeleton-title" style={{ width: "50%", height: 32, margin: "12px 0 6px" }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "65%", height: 12 }} />
+          </div>
+        </div>
+
+        <div className="grid grid-2" style={{ marginBottom: 20 }}>
+          <div className="card" style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            <div className="skeleton-pulse" style={{ width: 80, height: 80, borderRadius: "50%", flexShrink: 0 }} />
+            <div style={{ flexGrow: 1 }}>
+              <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 14 }} />
+              <div className="skeleton-pulse skeleton-text" style={{ width: "70%", height: 13, marginTop: 8 }} />
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="skeleton-pulse skeleton-text" style={{ width: "35%", height: 14, marginBottom: 16 }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "90%", height: 20, marginBottom: 8 }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "80%", height: 20 }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
