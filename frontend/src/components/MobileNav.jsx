@@ -1,5 +1,5 @@
-import React from "react";
-import { NavLink } from "react-router-dom";
+import React, { useEffect, useRef } from "react";
+import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useTheme } from "../context/ThemeContext.jsx";
 import {
@@ -48,10 +48,24 @@ const links = [
 export default function MobileNav() {
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
+  const location = useLocation();
+  const navContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (!navContainerRef.current) return;
+    const activeItem = navContainerRef.current.querySelector(".mobile-nav-item.active");
+    if (activeItem) {
+      activeItem.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+    }
+  }, [location.pathname]);
 
   return (
     <nav className="mobile-nav" aria-label="Primary">
-      <div className="mobile-nav-inner">
+      <div className="mobile-nav-inner" ref={navContainerRef}>
         {links.map((link) => {
           const Icon = link.icon;
           return (
