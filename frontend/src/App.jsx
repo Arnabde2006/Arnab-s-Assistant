@@ -19,9 +19,12 @@ import Pomodoro from "./pages/Pomodoro.jsx";
 import Profile from "./pages/Profile.jsx";
 
 import LoadingScreen from "./components/LoadingScreen.jsx";
+import { useMobileSwipeNavigation } from "./hooks/useMobileSwipeNavigation.js";
 
 function ProtectedShell({ children }) {
   const { user, loading } = useAuth();
+  useMobileSwipeNavigation();
+
   if (loading) return <LoadingScreen message="Verifying session..." />;
   if (!user) return <Navigate to="/login" replace />;
   return (
