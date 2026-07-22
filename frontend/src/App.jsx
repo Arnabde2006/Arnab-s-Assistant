@@ -18,9 +18,11 @@ import Debts from "./pages/Debts.jsx";
 import Pomodoro from "./pages/Pomodoro.jsx";
 import Profile from "./pages/Profile.jsx";
 
+import LoadingScreen from "./components/LoadingScreen.jsx";
+
 function ProtectedShell({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return null;
+  if (loading) return <LoadingScreen message="Verifying session..." />;
   if (!user) return <Navigate to="/login" replace />;
   return (
     <div className="app-shell">
