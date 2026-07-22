@@ -5,8 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Arnab's Assistant — your personal college companion</title>
     
-    <!-- Favicon -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Favicon (Dynamic Theme Adaptive) -->
+    <link rel="icon" href="/favicon-dark.ico" sizes="any" id="favicon-ico" />
+    <link rel="icon" type="image/svg+xml" href="/icon-dark.svg" id="favicon-svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon-dark-32.png" id="favicon-32" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icon-dark-16.png" id="favicon-16" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-dark.png" id="favicon-apple" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-dark-512.png" id="favicon-512" />
     
     <!-- SEO Optimization Meta Tags -->
     <meta name="description" content="Arnab's Assistant is a sleek, AI-powered personal college companion to manage your classes, log attendance, track to-dos, schedule exam timetables, view grades, and focus with built-in Pomodoro." />
@@ -40,6 +45,19 @@
       try {
         var theme = localStorage.getItem("theme") || "ink";
         document.documentElement.setAttribute("data-theme", theme);
+        var suffix = theme === "ink" ? "dark" : "light";
+        var ico = document.getElementById("favicon-ico");
+        if (ico) ico.href = "/favicon-" + suffix + ".ico";
+        var svg = document.getElementById("favicon-svg");
+        if (svg) svg.href = "/icon-" + suffix + ".svg";
+        var f32 = document.getElementById("favicon-32");
+        if (f32) f32.href = "/icon-" + suffix + "-32.png";
+        var f16 = document.getElementById("favicon-16");
+        if (f16) f16.href = "/icon-" + suffix + "-16.png";
+        var app = document.getElementById("favicon-apple");
+        if (app) app.href = "/apple-touch-icon-" + suffix + ".png";
+        var f512 = document.getElementById("favicon-512");
+        if (f512) f512.href = "/icon-" + suffix + "-512.png";
       } catch (e) {}
     </script>
     <style>
