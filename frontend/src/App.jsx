@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./context/AuthContext.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import MobileNav from "./components/MobileNav.jsx";
+import MobileHeader from "./components/MobileHeader.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import ViewOnly from "./pages/ViewOnly.jsx";
@@ -30,6 +31,7 @@ function ProtectedShell({ children }) {
   return (
     <div className="app-shell">
       <Sidebar />
+      <MobileHeader />
       <div className="main-content">{children}</div>
       <MobileNav />
     </div>
