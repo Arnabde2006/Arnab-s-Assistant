@@ -2,6 +2,20 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 
 const ThemeContext = createContext(null);
 
+function setFaviconLink(id, rel, href, type, sizes) {
+  let link = document.getElementById(id);
+  if (link && link.parentNode) {
+    link.parentNode.removeChild(link);
+  }
+  link = document.createElement("link");
+  link.id = id;
+  link.rel = rel;
+  if (type) link.type = type;
+  if (sizes) link.sizes = sizes;
+  link.href = href;
+  document.head.appendChild(link);
+}
+
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "ink");
 
@@ -9,26 +23,14 @@ export function ThemeProvider({ children }) {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
 
-    // Dynamic favicon switcher matching active theme state (ink=dark, parchment=light)
+    // Force instant browser tab favicon refresh by replacing link nodes
     const suffix = theme === "ink" ? "dark" : "light";
-
-    const ico = document.getElementById("favicon-ico");
-    if (ico) ico.href = `/favicon-${suffix}.ico`;
-
-    const svg = document.getElementById("favicon-svg");
-    if (svg) svg.href = `/icon-${suffix}.svg`;
-
-    const f32 = document.getElementById("favicon-32");
-    if (f32) f32.href = `/icon-${suffix}-32.png`;
-
-    const f16 = document.getElementById("favicon-16");
-    if (f16) f16.href = `/icon-${suffix}-16.png`;
-
-    const app = document.getElementById("favicon-apple");
-    if (app) app.href = `/apple-touch-icon-${suffix}.png`;
-
-    const f512 = document.getElementById("favicon-512");
-    if (f512) f512.href = `/icon-${suffix}-512.png`;
+    setFaviconLink("favicon-ico", "icon", `/favicon-${suffix}.ico`, "image/x-icon", "any");
+    setFaviconLink("favicon-svg", "icon", `/icon-${suffix}.svg`, "image/svg+xml");
+    setFaviconLink("favicon-32", "icon", `/icon-${suffix}-32.png`, "image/png", "32x32");
+    setFaviconLink("favicon-16", "icon", `/icon-${suffix}-16.png`, "image/png", "16x16");
+    setFaviconLink("favicon-apple", "apple-touch-icon", `/apple-touch-icon-${suffix}.png`, null, "180x180");
+    setFaviconLink("favicon-512", "icon", `/icon-${suffix}-512.png`, "image/png", "512x512");
   }, [theme]);
 
   return (
