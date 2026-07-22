@@ -1,7 +1,5 @@
 import React, { useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { useAuth } from "../context/AuthContext.jsx";
-import { useTheme } from "../context/ThemeContext.jsx";
 import {
   Home,
   ClipboardCheck,
@@ -12,9 +10,6 @@ import {
   Wallet,
   ArrowLeftRight,
   Timer,
-  LogOut,
-  Sun,
-  Moon,
   User
 } from "lucide-react";
 
@@ -46,8 +41,6 @@ const links = [
 
 
 export default function MobileNav() {
-  const { user, logout } = useAuth();
-  const { theme, setTheme } = useTheme();
   const location = useLocation();
   const navContainerRef = useRef(null);
 
@@ -82,34 +75,6 @@ export default function MobileNav() {
             </NavLink>
           );
         })}
-
-        {/* Theme Toggle Button */}
-        <button
-          className="mobile-nav-item"
-          onClick={() => setTheme(theme === "ink" ? "parchment" : "ink")}
-          title={theme === "ink" ? "Switch to Parchment (light)" : "Switch to Ink (dark)"}
-          style={{ cursor: "pointer" }}
-        >
-          <span className="icon" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {theme === "ink" ? <Sun size={18} /> : <Moon size={18} />}
-          </span>
-          Theme
-        </button>
-
-        {/* Logout Button */}
-        {user && (
-          <button
-            className="mobile-nav-item"
-            onClick={logout}
-            title="Log out"
-            style={{ cursor: "pointer" }}
-          >
-            <span className="icon" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <LogOut size={18} />
-            </span>
-            Log out
-          </button>
-        )}
       </div>
     </nav>
   );
