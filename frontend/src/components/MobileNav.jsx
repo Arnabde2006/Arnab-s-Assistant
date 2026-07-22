@@ -18,6 +18,19 @@ import {
   User
 } from "lucide-react";
 
+export const NAV_ROUTES = [
+  "/",
+  "/attendance",
+  "/todos",
+  "/timetable",
+  "/exams",
+  "/grades",
+  "/finance",
+  "/debts",
+  "/pomodoro",
+  "/profile",
+];
+
 const links = [
   { to: "/", label: "Home", icon: Home, end: true },
   { to: "/attendance", label: "Attend.", icon: ClipboardCheck },
