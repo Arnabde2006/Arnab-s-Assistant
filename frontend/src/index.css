@@ -1883,4 +1883,54 @@ select.input {
   color: var(--absent);
 }
 
+/* ==========================================================================
+   Theme-Adaptive Date Picker & Calendar Popup Styles
+   ========================================================================== */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  accent-color: var(--accent);
+}
+
+/* Enforce native dark/light popup color scheme matching active theme */
+[data-theme="ink"] input[type="date"],
+[data-theme="ink"] input[type="time"],
+[data-theme="ink"] input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+[data-theme="parchment"] input[type="date"],
+[data-theme="parchment"] input[type="time"],
+[data-theme="parchment"] input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+/* Custom Calendar Picker Indicator Icon styling */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+  opacity: 0.85;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  background: var(--accent-soft);
+  transform: scale(1.08);
+}
+
+[data-theme="ink"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85) sepia(0.2) saturate(3) hue-rotate(190deg);
+}
+
+[data-theme="parchment"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.2) sepia(0.3) saturate(4) hue-rotate(340deg);
+}
+
+
 
