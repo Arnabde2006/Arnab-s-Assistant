@@ -10,6 +10,7 @@ import {
   ChevronUp,
   RotateCcw,
   BookOpen,
+  LineChart,
 } from "lucide-react";
 
 const TARGET_PRESETS = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5];
@@ -127,10 +128,10 @@ function CGPATrendChart({
   const targetY = getY(targetCGPA);
 
   return (
-    <div style={{ width: "100%", overflowX: "auto", position: "relative" }}>
+    <div style={{ width: "100%", overflowX: "auto", position: "relative", WebkitOverflowScrolling: "touch" }}>
       <svg
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-        style={{ width: "100%", height: "auto", minWidth: 500, overflow: "visible" }}
+        style={{ width: "100%", height: "auto", minWidth: 460, overflow: "visible" }}
       >
         <defs>
           <linearGradient id="cgpaAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -262,7 +263,7 @@ function CGPATrendChart({
                 cx={x}
                 cy={ySGPA}
                 r="3"
-                fill={isFut ? "var(--accent)" : "var(--accent)"}
+                fill="var(--accent)"
                 opacity="0.8"
               />
 
@@ -292,21 +293,21 @@ function CGPATrendChart({
       </svg>
 
       {/* Graph Legend */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 8, fontSize: 11, color: "var(--text-muted)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 10, fontSize: 11, color: "var(--text-muted)", flexWrap: "wrap" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 16, height: 3, background: "var(--present)", borderRadius: 2 }} />
+          <span style={{ width: 14, height: 3, background: "var(--present)", borderRadius: 2 }} />
           Cumulative CGPA
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 16, height: 2, background: "var(--accent)", opacity: 0.7 }} />
+          <span style={{ width: 14, height: 2, background: "var(--accent)", opacity: 0.7 }} />
           Semester SGPA
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 14, borderTop: "1.5px dashed var(--accent)" }} />
+          <span style={{ width: 12, borderTop: "1.5px dashed var(--accent)" }} />
           Target Line ({targetCGPA.toFixed(1)})
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 14, borderTop: "2px dashed var(--present)" }} />
+          <span style={{ width: 12, borderTop: "2px dashed var(--present)" }} />
           Projected Future
         </span>
       </div>
@@ -317,6 +318,7 @@ function CGPATrendChart({
 // ── Main Component ────────────────────────────────────────────────────────
 export default function CGPATrendVisualizer({ data }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showGraph, setShowGraph] = useState(true);
   const [targetCGPA, setTargetCGPA] = useState(8.5);
   const [futureSemesters, setFutureSemesters] = useState(2);
   const [simulatedFutureSGPA, setSimulatedFutureSGPA] = useState(8.0);
@@ -378,7 +380,7 @@ export default function CGPATrendVisualizer({ data }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 16,
+          gap: 14,
           flexWrap: "wrap",
           padding: "16px 20px",
           background: "var(--panel)",
@@ -386,7 +388,7 @@ export default function CGPATrendVisualizer({ data }) {
           transition: "all 0.2s ease",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 300px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 260px" }}>
           <div
             style={{
               width: 44,
@@ -427,6 +429,8 @@ export default function CGPATrendVisualizer({ data }) {
             borderRadius: 10,
             cursor: "pointer",
             fontWeight: 500,
+            width: "100%",
+            maxWidth: "max-content",
           }}
         >
           <Sliders size={16} />
@@ -439,6 +443,7 @@ export default function CGPATrendVisualizer({ data }) {
 
   return (
     <div className="card" style={{ marginBottom: 20, position: "relative", overflow: "hidden" }}>
+      {/* Visualizer Top Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <TrendingUp size={20} color="var(--accent)" />
@@ -451,7 +456,27 @@ export default function CGPATrendVisualizer({ data }) {
             </p>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* Optional Graph Toggle Button */}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setShowGraph((v) => !v)}
+            style={{
+              fontSize: 12,
+              padding: "6px 12px",
+              background: showGraph ? "var(--accent-soft)" : "var(--bg-elevated)",
+              border: `1px solid ${showGraph ? "var(--accent)" : "var(--border-strong)"}`,
+              color: showGraph ? "var(--accent)" : "var(--text)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <LineChart size={14} />
+            {showGraph ? "Hide Graph" : "Show Graph"}
+          </button>
+
           {(targetCGPA !== 8.5 || futureSemesters !== 2 || simulatedFutureSGPA !== 8.0) && (
             <button
               className="btn"
@@ -484,28 +509,73 @@ export default function CGPATrendVisualizer({ data }) {
               gap: 6,
             }}
           >
-            Close Visualizer
+            Close
             <ChevronUp size={14} />
           </button>
         </div>
       </div>
 
-      {/* SVG Interactive Trend Graph */}
-      <div style={{ marginBottom: 20, background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-          <Award size={16} color="var(--accent)" />
-          CGPA & SGPA Trajectory Chart ({historyTrend.length} semester{historyTrend.length !== 1 ? "s" : ""} + {futureSemesters} forecasted)
-        </div>
+      {/* SVG Interactive Trend Graph — Optional View */}
+      {showGraph ? (
+        <div style={{ marginBottom: 20, background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Award size={16} color="var(--accent)" />
+              CGPA & SGPA Trajectory Chart ({historyTrend.length} sem{historyTrend.length !== 1 ? "s" : ""} + {futureSemesters} forecasted)
+            </span>
+          </div>
 
-        <CGPATrendChart
-          historyTrend={historyTrend}
-          futureSemesters={futureSemesters}
-          simulatedFutureSGPA={simulatedFutureSGPA}
-          currentPoints={currentPoints}
-          currentCredits={currentCredits}
-          targetCGPA={targetCGPA}
-        />
-      </div>
+          <CGPATrendChart
+            historyTrend={historyTrend}
+            futureSemesters={futureSemesters}
+            simulatedFutureSGPA={simulatedFutureSGPA}
+            currentPoints={currentPoints}
+            currentCredits={currentCredits}
+            targetCGPA={targetCGPA}
+          />
+        </div>
+      ) : (
+        <div
+          style={{
+            marginBottom: 20,
+            background: "var(--bg-elevated)",
+            padding: "12px 16px",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            display: "flex",
+            justify: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <LineChart size={18} color="var(--accent)" />
+            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+              Graph view is hidden for a compact layout. Click "Show Graph" to expand chart.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setShowGraph(true)}
+            style={{
+              fontSize: 12,
+              padding: "5px 12px",
+              background: "var(--accent-soft)",
+              border: "1px solid var(--accent)",
+              color: "var(--accent)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              borderRadius: 8,
+            }}
+          >
+            <LineChart size={14} />
+            Show Graph
+          </button>
+        </div>
+      )}
 
       {/* Target CGPA Preset Selector */}
       <div style={{ marginBottom: 20, background: "var(--bg-elevated)", padding: "12px 16px", borderRadius: 12, border: "1px solid var(--border)" }}>
@@ -523,12 +593,14 @@ export default function CGPATrendVisualizer({ data }) {
                 style={{
                   fontSize: 12,
                   fontWeight: targetCGPA === preset ? 600 : 400,
-                  padding: "4px 10px",
-                  borderRadius: 6,
+                  padding: "6px 12px",
+                  minHeight: 34,
+                  borderRadius: 8,
                   border: `1px solid ${targetCGPA === preset ? "var(--accent)" : "var(--border)"}`,
                   background: targetCGPA === preset ? "var(--accent)" : "transparent",
                   color: targetCGPA === preset ? "var(--accent-text)" : "var(--text-muted)",
                   cursor: "pointer",
+                  transition: "all 0.15s ease",
                 }}
               >
                 {preset.toFixed(1)}
@@ -544,7 +616,7 @@ export default function CGPATrendVisualizer({ data }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Upcoming Semesters Slider */}
           <div style={{ background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
                 <BookOpen size={16} color="var(--accent)" />
                 Upcoming Semesters to Forecast:
@@ -557,7 +629,7 @@ export default function CGPATrendVisualizer({ data }) {
               max="6"
               value={futureSemesters}
               onChange={(e) => setFutureSemesters(Number(e.target.value))}
-              style={{ width: "100%", accentColor: "var(--accent)", cursor: "pointer" }}
+              style={{ width: "100%", height: 24, accentColor: "var(--accent)", cursor: "pointer" }}
             />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
               <span>1 sem</span>
@@ -568,7 +640,7 @@ export default function CGPATrendVisualizer({ data }) {
 
           {/* Test Future SGPA Slider */}
           <div style={{ background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
                 <Sliders size={16} color="var(--present)" />
                 Hypothetical Future SGPA:
@@ -582,7 +654,7 @@ export default function CGPATrendVisualizer({ data }) {
               step="0.1"
               value={simulatedFutureSGPA}
               onChange={(e) => setSimulatedFutureSGPA(Number(e.target.value))}
-              style={{ width: "100%", accentColor: "var(--present)", cursor: "pointer" }}
+              style={{ width: "100%", height: 24, accentColor: "var(--present)", cursor: "pointer" }}
             />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
               <span>5.0</span>

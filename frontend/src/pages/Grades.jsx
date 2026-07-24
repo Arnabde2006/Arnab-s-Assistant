@@ -3,6 +3,22 @@ import { api } from "../api/client.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
 import CGPATrendVisualizer from "../components/CGPATrendVisualizer.jsx";
+import {
+  Trophy,
+  Star,
+  ThumbsUp,
+  TrendingUp,
+  AlertTriangle,
+  GraduationCap,
+} from "lucide-react";
+
+function renderCgpaBadge(cgpa) {
+  if (cgpa >= 9) return <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Trophy size={14} /> Outstanding</span>;
+  if (cgpa >= 8) return <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Star size={14} /> Excellent</span>;
+  if (cgpa >= 7) return <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><ThumbsUp size={14} /> Good standing</span>;
+  if (cgpa >= 5) return <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><TrendingUp size={14} /> Keep pushing</span>;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><AlertTriangle size={14} /> Needs improvement</span>;
+}
 
 // ── Grade colour map ─────────────────────────────────────────────────────────
 const GRADE_COLORS = {
@@ -264,10 +280,7 @@ export default function Grades() {
                 color: cgpaColor,
                 letterSpacing: "0.04em",
               }}>
-                {data.cgpa >= 9 ? "🏆 Outstanding" :
-                 data.cgpa >= 8 ? "⭐ Excellent" :
-                 data.cgpa >= 7 ? "👍 Good standing" :
-                 data.cgpa >= 5 ? "📈 Keep pushing" : "⚠️ Needs improvement"}
+                {renderCgpaBadge(data.cgpa)}
               </div>
             )}
           </div>
@@ -293,7 +306,9 @@ export default function Grades() {
       {/* ── Empty state ── */}
       {data.semesters.length === 0 && (
         <div className="card" style={{ textAlign: "center", padding: "40px 24px" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🎓</div>
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 64, height: 64, borderRadius: 16, background: "var(--accent-soft)", color: "var(--accent)", marginBottom: 16 }}>
+            <GraduationCap size={36} />
+          </div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>No grades uploaded yet</div>
           <div style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 20 }}>
             Upload a photo or PDF of your semester grade card and the AI will extract your scores automatically.
