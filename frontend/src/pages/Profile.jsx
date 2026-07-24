@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { api } from "../api/client.js";
 import Switch from "../components/Switch.jsx";
+import ViewOnlyLinkCard from "../components/ViewOnlyLinkCard.jsx";
 
 export default function Profile() {
   const { user, setUser } = useAuth();
@@ -272,36 +273,10 @@ export default function Profile() {
             </button>
           </div>
         </form>
-
       </div>
 
-      <div className="card" style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 8px 0", fontFamily: "var(--font-display)" }}>Shared View-Only Access</h2>
-        <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16, lineHeight: 1.5 }}>
-          Share your live attendance, tasks, grades, and schedule with your family or friends. They can view your dashboard in read-only mode without needing an account.
-        </p>
-
-        {user?.viewToken ? (
-          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <input
-              className="input"
-              readOnly
-              value={viewOnlyLink}
-              style={{ flex: 1, minWidth: 260, fontFamily: "var(--font-mono)", fontSize: 12, background: "rgba(0,0,0,0.05)", cursor: "text" }}
-              onClick={(e) => e.target.select()}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={handleCopy} style={{ minWidth: 80 }}>
-                {copied ? "Copied!" : "Copy Link"}
-              </button>
-              <button className="btn-ghost btn" onClick={handleRegenerate} disabled={regenerateLoading}>
-                {regenerateLoading ? "Regenerating..." : "Regenerate Link"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ color: "var(--text-muted)", fontSize: 13 }}>No token generated for your account.</div>
-        )}
+      <div style={{ marginTop: 24 }}>
+        <ViewOnlyLinkCard />
       </div>
     </div>
   );
