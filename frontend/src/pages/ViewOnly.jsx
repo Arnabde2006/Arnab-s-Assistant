@@ -1,5 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import {
+  Eye,
+  ShieldCheck,
+  Calendar,
+  Clock,
+  GraduationCap,
+  Award,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  BookOpen,
+  ArrowRight,
+} from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import AttendanceRing from "../components/AttendanceRing.jsx";
 
@@ -10,32 +23,114 @@ function formatNice(dateStr) {
   return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 }
 
-const STATUS_LABEL = { present: "Present", absent: "Absent", half_day: "Half day" };
+const STATUS_META = {
+  present: { label: "Present", color: "var(--present)" },
+  absent: { label: "Absent", color: "var(--absent)" },
+  half_day: { label: "Half day", color: "#C9A227" },
+  no_college: { label: "No college", color: "var(--text-muted)" },
+};
+
+function ViewOnlySkeleton() {
+  return (
+    <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 24 }}>
+        <div>
+          <div className="skeleton-pulse skeleton-title" style={{ width: 220, height: 28, borderRadius: 6 }} />
+          <div className="skeleton-pulse skeleton-text" style={{ width: 300, height: 14, marginTop: 8, borderRadius: 4 }} />
+        </div>
+        <div className="skeleton-pulse" style={{ width: 68, height: 32, borderRadius: 16 }} />
+      </div>
+
+      <div className="grid grid-2" style={{ marginBottom: 20 }}>
+        <div className="card" style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div className="skeleton-pulse" style={{ width: 80, height: 80, borderRadius: "50%", flexShrink: 0 }} />
+          <div style={{ flexGrow: 1 }}>
+            <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 14 }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "70%", height: 12, marginTop: 8 }} />
+          </div>
+        </div>
+        <div className="card" style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          <div className="skeleton-pulse" style={{ width: 80, height: 80, borderRadius: "50%", flexShrink: 0 }} />
+          <div style={{ flexGrow: 1 }}>
+            <div className="skeleton-pulse skeleton-text" style={{ width: "40%", height: 14 }} />
+            <div className="skeleton-pulse skeleton-text" style={{ width: "70%", height: 12, marginTop: 8 }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="skeleton-pulse skeleton-text" style={{ width: "30%", height: 16, marginBottom: 16 }} />
+        <div className="skeleton-pulse" style={{ width: "100%", height: 60, borderRadius: 12 }} />
+      </div>
+
+      <div className="card">
+        <div className="skeleton-pulse skeleton-text" style={{ width: "25%", height: 16, marginBottom: 16 }} />
+        <div className="skeleton-pulse" style={{ width: "100%", height: 120, borderRadius: 12 }} />
+      </div>
+    </div>
+  );
+}
 
 export default function ViewOnly() {
   const { token } = useParams();
   const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    setLoading(true);
     fetch(`${API_URL}/view/${token}`)
       .then(async (res) => {
         const body = await res.json();
         if (!res.ok) throw new Error(body.error || "Couldn't load this link");
         setData(body);
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [token]);
+
+  if (loading) {
+    return <ViewOnlySkeleton />;
+  }
 
   if (error) {
     return (
       <div className="auth-wrap">
-        <div className="auth-card" style={{ textAlign: "center" }}>
-          <h1 className="auth-title">Link not found</h1>
-          <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 8 }}>{error}</p>
-          <Link to="/login" style={{ color: "var(--accent)", fontSize: 14, display: "inline-block", marginTop: 16 }}>
-            Back to login
-          </Link>
+        <div className="auth-card" style={{ textAlign: "center", padding: "36px 24px" }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 16,
+              background: "rgba(193, 85, 74, 0.12)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--absent)",
+              margin: "0 auto 16px auto",
+            }}
+          >
+            <AlertCircle size={28} />
+          </div>
+          <h1 className="auth-title">Link Not Found</h1>
+          <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 8, lineHeight: 1.5 }}>
+            {error}. The link may have expired or been regenerated by the user.
+          </p>
+          <div style={{ marginTop: 24 }}>
+            <Link
+              to="/login"
+              className="btn"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "8px 20px",
+                textDecoration: "none",
+              }}
+            >
+              Go to Login <ArrowRight size={16} />
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -43,79 +138,295 @@ export default function ViewOnly() {
 
   if (!data) return null;
 
+  const attendance = data.attendance || {};
+  const goal = attendance.goal || 75;
+  const isMeetingGoal = attendance.total > 0 && attendance.percentage >= goal;
+
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 16px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
-        <div style={{ minWidth: 0 }}>
-          <h1 className="page-title" style={{ wordBreak: "break-word" }}>{data.name}'s overview</h1>
-          <p className="page-subtitle">View-only — attendance and calendar, nothing here can be edited.</p>
+    <div style={{ maxWidth: 780, margin: "0 auto", padding: "24px 16px 48px 16px" }}>
+      {/* Top Banner Header */}
+      <div
+        style={{
+          display: "flex",
+          justify: "space-between",
+          alignItems: "center",
+          marginBottom: 24,
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              background: "var(--accent-soft)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--accent)",
+              flexShrink: 0,
+              boxShadow: "var(--shadow)",
+            }}
+          >
+            <GraduationCap size={26} />
+          </div>
+          <div>
+            <h1 className="page-title" style={{ fontSize: 22, wordBreak: "break-word", margin: 0 }}>
+              {data.name}'s Overview
+            </h1>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4, alignItems: "center" }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  background: "var(--accent-soft)",
+                  color: "var(--accent)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <Eye size={12} /> Live Read-Only View
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-muted)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+              >
+                <ShieldCheck size={12} color="var(--present)" /> Shared Dashboard
+              </span>
+            </div>
+          </div>
         </div>
+
         <ThemeToggle />
       </div>
 
+      {/* Attendance Rings Grid */}
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
-        <div className="card" style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        {/* Overall Attendance */}
+        <div className="card" style={{ display: "flex", gap: 18, alignItems: "center" }}>
           <AttendanceRing
-            percentage={data.attendance.percentage}
-            color={data.attendance.percentage >= data.attendance.goal ? "var(--present)" : "var(--absent)"}
+            percentage={attendance.percentage || 0}
+            color={attendance.total === 0 ? "var(--accent)" : isMeetingGoal ? "var(--present)" : "var(--absent)"}
+            size={90}
           />
-          <div>
-            <div className="label" style={{ marginBottom: 4 }}>Overall attendance</div>
-            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              {data.attendance.present} present · {data.attendance.halfDay} half days · {data.attendance.absent} absent
+          <div style={{ flexGrow: 1 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+              <span className="label">Overall Attendance</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>Goal: {goal}%</span>
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
+              {attendance.total === 0 ? (
+                <span style={{ color: "var(--text-muted)" }}>No attendance logs recorded yet</span>
+              ) : (
+                `${attendance.present} present · ${attendance.halfDay} half days · ${attendance.absent} absent`
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+              {attendance.total > 0
+                ? `${attendance.total} college day(s) logged`
+                : "Awaiting first attendance check-in"}
             </div>
           </div>
         </div>
-        <div className="card" style={{ display: "flex", gap: 16, alignItems: "center" }}>
+
+        {/* According to College */}
+        <div className="card" style={{ display: "flex", gap: 18, alignItems: "center" }}>
           <AttendanceRing
-            percentage={data.attendance.college.percentage}
-            color={data.attendance.college.percentage >= data.attendance.goal ? "var(--present)" : "var(--absent)"}
+            percentage={attendance.college?.percentage || 0}
+            color={
+              attendance.total === 0
+                ? "var(--accent)"
+                : (attendance.college?.percentage || 0) >= goal
+                ? "var(--present)"
+                : "var(--absent)"
+            }
+            size={90}
           />
-          <div>
-            <div className="label" style={{ marginBottom: 4 }}>According to college</div>
-            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              {data.attendance.college.earnedPoints} / {data.attendance.college.maxPoints} points
+          <div style={{ flexGrow: 1 }}>
+            <div className="label" style={{ marginBottom: 2 }}>According to College</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>2 pts per full day · 1 pt per half day</div>
+            <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>
+              {attendance.college ? `${attendance.college.earnedPoints} / ${attendance.college.maxPoints} points` : "—"}
             </div>
           </div>
         </div>
       </div>
 
-      {data.exams.length > 0 && (
+      {/* Upcoming Exams Card (if any) */}
+      {data.exams && data.exams.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
-          <div className="label" style={{ marginBottom: 10 }}>Upcoming exams</div>
+          <div className="label" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+            <BookOpen size={16} color="var(--accent)" />
+            Upcoming Exams ({data.exams.length})
+          </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             {data.exams.map((e) => (
-              <div key={e.id} style={{ padding: "8px 12px", borderRadius: 8, background: "var(--bg-elevated)", fontSize: 13 }}>
-                <strong>{e.course}</strong> · {e.exam_date}{e.exam_time ? ` · ${e.exam_time}` : ""}
+              <div
+                key={e.id}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  fontSize: 13,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)" }} />
+                <div>
+                  <strong>{e.course}</strong>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                    {formatNice(e.exam_date)}{e.exam_time ? ` · ${e.exam_time}` : ""}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
+      {/* Calendar & Tasks Card */}
       <div className="card" style={{ marginBottom: 20 }}>
-        <div className="label" style={{ marginBottom: 12 }}>Calendar (next 60 days)</div>
-        {data.todos.length === 0 && <div className="empty-state">Nothing scheduled.</div>}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {data.todos.map((t) => (
-            <div key={t.id} className={"todo-item" + (t.done ? " done" : "")} style={{ cursor: "default" }}>
-              <span className={`priority-dot priority-${t.priority}`} />
-              <span style={{ flex: 1 }}>{t.text}</span>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{formatNice(t.date)}</span>
-            </div>
-          ))}
+        <div className="label" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
+          <Calendar size={16} color="var(--accent)" />
+          Calendar &amp; Tasks (Next 60 Days)
         </div>
+
+        {(!data.todos || data.todos.length === 0) ? (
+          <div
+            style={{
+              padding: "24px 16px",
+              textAlign: "center",
+              background: "var(--bg-elevated)",
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+            }}
+          >
+            <Sparkles size={24} color="var(--text-muted)" style={{ marginBottom: 8, opacity: 0.6 }} />
+            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Nothing scheduled for the next 60 days.</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {data.todos.map((t) => (
+              <div
+                key={t.id}
+                className={"todo-item" + (t.done ? " done" : "")}
+                style={{
+                  cursor: "default",
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <span className={`priority-dot priority-${t.priority}`} />
+                <span style={{ flex: 1, fontSize: 13 }}>{t.text}</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                  {formatNice(t.date)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
+      {/* Recent Days Log Card */}
       <div className="card">
-        <div className="label" style={{ marginBottom: 12 }}>Recent days</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {data.recentAttendance.map((r) => (
-            <div key={r.date} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 10px", borderRadius: 6, background: "var(--bg-elevated)" }}>
-              <span>{formatNice(r.date)}</span>
-              <span style={{ color: "var(--text-muted)" }}>{STATUS_LABEL[r.status]}</span>
-            </div>
-          ))}
+        <div className="label" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
+          <Clock size={16} color="var(--accent)" />
+          Recent Attendance Days
+        </div>
+
+        {(!data.recentAttendance || data.recentAttendance.length === 0) ? (
+          <div
+            style={{
+              padding: "24px 16px",
+              textAlign: "center",
+              background: "var(--bg-elevated)",
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+            }}
+          >
+            <Clock size={24} color="var(--text-muted)" style={{ marginBottom: 8, opacity: 0.6 }} />
+            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>No attendance logs recorded yet.</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {data.recentAttendance.map((r) => {
+              const meta = STATUS_META[r.status] || { label: r.status, color: "var(--text-muted)" };
+              return (
+                <div
+                  key={r.date}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{formatNice(r.date)}</span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: "3px 10px",
+                      borderRadius: 6,
+                      background: meta.color + "22",
+                      color: meta.color,
+                      border: `1px solid ${meta.color}44`,
+                    }}
+                  >
+                    {meta.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Shared Link Footer */}
+      <div
+        style={{
+          marginTop: 32,
+          textAlign: "center",
+          fontSize: 12,
+          color: "var(--text-muted)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          alignItems: "center",
+        }}
+      >
+        <div>Viewing read-only shared dashboard for {data.name}</div>
+        <div>
+          Powered by{" "}
+          <Link to="/login" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}>
+            College Assistant
+          </Link>
         </div>
       </div>
     </div>
