@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import AttendanceRing from "../components/AttendanceRing.jsx";
+import BunkSimulator from "../components/BunkSimulator.jsx";
 import FileUpload from "../components/FileUpload.jsx";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 
@@ -213,6 +214,8 @@ export default function Attendance() {
           </div>
         </div>
       </div>
+
+      {summary && <BunkSimulator summary={summary} />}
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
         <div className="card">
