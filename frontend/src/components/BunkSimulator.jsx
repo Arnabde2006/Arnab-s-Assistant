@@ -10,13 +10,118 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  BarChart2,
 } from "lucide-react";
 import AttendanceRing from "./AttendanceRing.jsx";
 
 const TARGET_PRESETS = [60, 75, 80, 85, 90];
 
+// ── Visual Attendance Trajectory Chart Component ──────────────────────────────
+function AttendanceTrajectoryChart({ currentTotal, currentPresent, targetGoal, daysToBunk, daysToAttend }) {
+  const points = [];
+
+  // Baseline current point
+  const curPct = currentTotal === 0 ? 0 : Math.round(((currentPresent / currentTotal) * 100) * 10) / 10;
+  points.push({
+    step: 0,
+    label: "Now",
+    pct: curPct,
+  });
+
+  const totalActions = daysToBunk + daysToAttend;
+  if (totalActions > 0) {
+    const steps = 4;
+    for (let i = 1; i <= steps; i++) {
+      const stepBunks = (daysToBunk / steps) * i;
+      const stepAttends = (daysToAttend / steps) * i;
+      const t = currentTotal + stepBunks + stepAttends;
+      const p = currentPresent + stepAttends;
+      const pct = t === 0 ? 0 : Math.round(((p / t) * 100) * 10) / 10;
+      points.push({
+        step: i,
+        label: i === steps ? "Final" : `+${Math.round(stepBunks + stepAttends)}d`,
+        pct,
+      });
+    }
+  }
+
+  const svgW = 540;
+  const svgH = 160;
+  const padL = 40;
+  const padR = 75;
+  const padT = 26;
+  const padB = 30;
+  const chartW = svgW - padL - padR;
+  const chartH = svgH - padT - padB;
+
+  const getY = (val) => padT + (1 - Math.min(100, Math.max(0, val)) / 100) * chartH;
+  const getX = (idx) => padL + (idx / Math.max(1, points.length - 1)) * chartW;
+
+  const targetY = getY(targetGoal);
+
+  let pathD = "";
+  points.forEach((pt, idx) => {
+    pathD += idx === 0 ? `M ${getX(idx)} ${getY(pt.pct)}` : ` L ${getX(idx)} ${getY(pt.pct)}`;
+  });
+
+  return (
+    <div style={{ width: "100%", overflowX: "auto", position: "relative", WebkitOverflowScrolling: "touch" }}>
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", height: "auto", minWidth: 380, overflow: "visible" }}>
+        {/* Y Grid lines */}
+        {[100, 75, 50, 25, 0].map((val) => (
+          <g key={val}>
+            <line x1={padL} y1={getY(val)} x2={svgW - padR} y2={getY(val)} stroke="var(--border)" strokeDasharray="3 3" strokeWidth="1" />
+            <text x={padL - 6} y={getY(val) + 3} textAnchor="end" fill="var(--text-muted)" style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}>
+              {val}%
+            </text>
+          </g>
+        ))}
+
+        {/* Target Goal Reference Line */}
+        <line x1={padL} y1={targetY} x2={svgW - padR} y2={targetY} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth="1.5" />
+        <text x={svgW - padR + 6} y={targetY + 3} fill="var(--accent)" style={{ fontSize: 10, fontWeight: 600, fontFamily: "var(--font-mono)" }}>
+          Goal ({targetGoal}%)
+        </text>
+
+        {/* Trajectory Path Line */}
+        {pathD && (
+          <path
+            d={pathD}
+            fill="none"
+            stroke={points[points.length - 1].pct >= targetGoal ? "var(--present)" : "var(--absent)"}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {/* Nodes & Value Badges */}
+        {points.map((pt, idx) => {
+          const x = getX(idx);
+          const y = getY(pt.pct);
+          const isGood = pt.pct >= targetGoal;
+
+          return (
+            <g key={idx}>
+              <circle cx={x} cy={y} r="5" fill="var(--panel)" stroke={isGood ? "var(--present)" : "var(--absent)"} strokeWidth="2.5" />
+              <text x={x} y={y - 10} textAnchor="middle" fill={isGood ? "var(--present)" : "var(--absent)"} style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+                {pt.pct}%
+              </text>
+              <text x={x} y={svgH - 8} textAnchor="middle" fill="var(--text-muted)" style={{ fontSize: 10 }}>
+                {pt.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────
 export default function BunkSimulator({ summary }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   const [targetGoal, setTargetGoal] = useState(summary?.goal || 75);
   const [daysToBunk, setDaysToBunk] = useState(0);
   const [daysToAttend, setDaysToAttend] = useState(0);
@@ -64,8 +169,8 @@ export default function BunkSimulator({ summary }) {
           marginBottom: 20,
           display: "flex",
           alignItems: "center",
-          justify: "space-between",
-          gap: 16,
+          justifyContent: "space-between",
+          gap: 14,
           flexWrap: "wrap",
           padding: "16px 20px",
           background: "var(--panel)",
@@ -73,7 +178,7 @@ export default function BunkSimulator({ summary }) {
           transition: "all 0.2s ease",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 300px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 260px" }}>
           <div
             style={{
               width: 44,
@@ -114,6 +219,8 @@ export default function BunkSimulator({ summary }) {
             borderRadius: 10,
             cursor: "pointer",
             fontWeight: 500,
+            width: "100%",
+            maxWidth: "max-content",
           }}
         >
           <Sliders size={16} />
@@ -126,6 +233,7 @@ export default function BunkSimulator({ summary }) {
 
   return (
     <div className="card" style={{ marginBottom: 20, position: "relative", overflow: "hidden" }}>
+      {/* Top Header Controls */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Target size={20} color="var(--accent)" />
@@ -138,7 +246,28 @@ export default function BunkSimulator({ summary }) {
             </p>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* Optional Graph Toggle Button */}
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setShowGraph((v) => !v)}
+            style={{
+              fontSize: 12,
+              padding: "6px 12px",
+              background: showGraph ? "var(--accent-soft)" : "var(--bg-elevated)",
+              border: `1px solid ${showGraph ? "var(--accent)" : "var(--border-strong)"}`,
+              color: showGraph ? "var(--accent)" : "var(--text)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <BarChart2 size={14} />
+            {showGraph ? "Hide Graph" : "Show Graph"}
+          </button>
+
           {(daysToBunk > 0 || daysToAttend > 0 || targetGoal !== summary.goal) && (
             <button
               className="btn"
@@ -171,11 +300,28 @@ export default function BunkSimulator({ summary }) {
               gap: 6,
             }}
           >
-            Close Simulator
+            Close
             <ChevronUp size={14} />
           </button>
         </div>
       </div>
+
+      {/* Visual Trajectory Graph — Optional View */}
+      {showGraph && (
+        <div style={{ marginBottom: 20, background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <BarChart2 size={16} color="var(--accent)" />
+            Simulated Attendance Trajectory Graph
+          </div>
+          <AttendanceTrajectoryChart
+            currentTotal={currentTotal}
+            currentPresent={currentPresent}
+            targetGoal={targetGoal}
+            daysToBunk={daysToBunk}
+            daysToAttend={daysToAttend}
+          />
+        </div>
+      )}
 
       {/* Target Goal Presets Selector */}
       <div style={{ marginBottom: 20, background: "var(--bg-elevated)", padding: "12px 16px", borderRadius: 12, border: "1px solid var(--border)" }}>
@@ -193,12 +339,14 @@ export default function BunkSimulator({ summary }) {
                 style={{
                   fontSize: 12,
                   fontWeight: targetGoal === preset ? 600 : 400,
-                  padding: "4px 10px",
-                  borderRadius: 6,
+                  padding: "6px 12px",
+                  minHeight: 34,
+                  borderRadius: 8,
                   border: `1px solid ${targetGoal === preset ? "var(--accent)" : "var(--border)"}`,
                   background: targetGoal === preset ? "var(--accent)" : "transparent",
                   color: targetGoal === preset ? "var(--accent-text)" : "var(--text-muted)",
                   cursor: "pointer",
+                  transition: "all 0.15s ease",
                 }}
               >
                 {preset}%
@@ -213,7 +361,7 @@ export default function BunkSimulator({ summary }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Days to Bunk Slider */}
           <div style={{ background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--absent)", display: "flex", alignItems: "center", gap: 6 }}>
                 <Coffee size={16} />
                 Upcoming Days to Bunk:
@@ -226,7 +374,7 @@ export default function BunkSimulator({ summary }) {
               max="30"
               value={daysToBunk}
               onChange={(e) => setDaysToBunk(Number(e.target.value))}
-              style={{ width: "100%", accentColor: "var(--absent)", cursor: "pointer" }}
+              style={{ width: "100%", height: 24, accentColor: "var(--absent)", cursor: "pointer" }}
             />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
               <span>0 days</span>
@@ -237,7 +385,7 @@ export default function BunkSimulator({ summary }) {
 
           {/* Days to Attend Slider */}
           <div style={{ background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--present)", display: "flex", alignItems: "center", gap: 6 }}>
                 <BookOpen size={16} />
                 Upcoming Days to Attend:
@@ -250,7 +398,7 @@ export default function BunkSimulator({ summary }) {
               max="30"
               value={daysToAttend}
               onChange={(e) => setDaysToAttend(Number(e.target.value))}
-              style={{ width: "100%", accentColor: "var(--present)", cursor: "pointer" }}
+              style={{ width: "100%", height: 24, accentColor: "var(--present)", cursor: "pointer" }}
             />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
               <span>0 days</span>
@@ -262,13 +410,13 @@ export default function BunkSimulator({ summary }) {
 
         {/* Forecast Output Column */}
         <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 16, border: `1px solid ${ringColor}`, display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
             <AttendanceRing
               percentage={simPercentage}
               color={ringColor}
               size={90}
             />
-            <div style={{ flexGrow: 1 }}>
+            <div style={{ flex: "1 1 140px" }}>
               <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-muted)" }}>Projected Attendance</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: ringColor }}>
                 {simPercentage}%
@@ -309,7 +457,7 @@ export default function BunkSimulator({ summary }) {
               </div>
             )}
 
-            <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
               <span>College Points Forecast (2 pts/day):</span>
               <strong style={{ color: "var(--text)" }}>{simCollegePercentage}% ({simCollegeEarned}/{simCollegeMax} pts)</strong>
             </div>

@@ -160,13 +160,13 @@ export default function Attendance() {
       </div>
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
-        <div className="card" style={{ display: "flex", gap: 20, alignItems: "center" }}>
+        <div className="card" style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <AttendanceRing
             percentage={summary?.percentage || 0}
             color={summary && summary.percentage >= summary.goal ? "var(--present)" : "var(--absent)"}
             size={100}
           />
-          <div>
+          <div style={{ flex: "1 1 180px" }}>
             <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Overall attendance</div>
             <div style={{ fontSize: 13, marginTop: 4 }}>
               {summary ? `${summary.present} present · ${summary.halfDay} half days · ${summary.absent} absent` : "—"}
@@ -187,13 +187,13 @@ export default function Attendance() {
           </div>
         </div>
 
-        <div className="card" style={{ display: "flex", gap: 20, alignItems: "center" }}>
+        <div className="card" style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <AttendanceRing
             percentage={summary?.college?.percentage || 0}
             color={summary && summary.college.percentage >= summary.goal ? "var(--present)" : "var(--absent)"}
             size={100}
           />
-          <div>
+          <div style={{ flex: "1 1 180px" }}>
             <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Attendance according to college</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
               Each full day = 2 points, half day = 1 point
