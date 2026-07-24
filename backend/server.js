@@ -34,6 +34,9 @@ if (!process.env.CLIENT_ORIGIN) {
 
 const app = express();
 
+// Trust reverse proxy (e.g. Render, Vercel, Nginx, Cloudflare) so rate limiters retrieve actual client IPs.
+app.set("trust proxy", 1);
+
 // Sets standard security headers (X-Content-Type-Options, etc). CSP is left
 // off since this is a pure JSON API with no HTML views to protect.
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -43,12 +46,19 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "")
   .map((o) => o.trim())
   .filter(Boolean);
 
+const isProduction = process.env.NODE_ENV === "production";
+
 app.use(
   cors({
     origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
       const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-      if (isLocalhost || allowedOrigins.includes(origin) || allowedOrigins.length === 0) {
+      const isAllowed = allowedOrigins.includes(origin);
+      // In development mode only, allow all origins if CLIENT_ORIGIN is not explicitly configured
+      const isDevFallback = !isProduction && allowedOrigins.length === 0;
+
+      if (isLocalhost || isAllowed || isDevFallback) {
         return callback(null, origin);
       }
       return callback(new Error("Not allowed by CORS"));
