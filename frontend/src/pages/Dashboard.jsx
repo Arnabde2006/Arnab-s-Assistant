@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import AttendanceRing from "../components/AttendanceRing.jsx";
+import ViewOnlyLinkCard from "../components/ViewOnlyLinkCard.jsx";
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -143,52 +144,7 @@ export default function Dashboard() {
 
       <ChatCard />
       <div style={{ height: 20 }} />
-      <ViewLinkCard />
-    </div>
-  );
-}
-
-function ViewLinkCard() {
-  const { user, setUser } = useAuth();
-  const [copied, setCopied] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  if (!user?.viewToken) return null;
-
-  const link = `${window.location.origin}/view/${user.viewToken}`;
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard API unavailable — user can still select and copy manually
-    }
-  }
-
-  async function regenerate() {
-    if (!confirm("This will invalidate your old view-only link. Continue?")) return;
-    setLoading(true);
-    try {
-      const data = await api.post("/auth/view-token/regenerate", {});
-      setUser(data.user);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="label" style={{ marginBottom: 8 }}>Your view-only link</div>
-      <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 12 }}>
-        Bookmark this to check your attendance and calendar instantly — no login, no editing.
-      </p>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <input className="input" readOnly value={link} onFocus={(e) => e.target.select()} style={{ flex: "1 1 200px", minWidth: 0 }} />
-        <button className="btn" onClick={copy} type="button">{copied ? "Copied!" : "Copy"}</button>
-        <button className="btn-ghost btn" onClick={regenerate} type="button" disabled={loading}>Regenerate</button>
-      </div>
+      <ViewOnlyLinkCard />
     </div>
   );
 }
