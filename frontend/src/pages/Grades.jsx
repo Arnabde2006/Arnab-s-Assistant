@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
+import CGPATrendVisualizer from "../components/CGPATrendVisualizer.jsx";
 
 // ── Grade colour map ─────────────────────────────────────────────────────────
 const GRADE_COLORS = {
@@ -286,6 +287,8 @@ export default function Grades() {
           )}
         </div>
       </div>
+
+      <CGPATrendVisualizer data={data} />
 
       {/* ── Empty state ── */}
       {data.semesters.length === 0 && (
