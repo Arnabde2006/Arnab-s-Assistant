@@ -1,9 +1,22 @@
 import React, { useState } from "react";
+import {
+  Target,
+  Sliders,
+  RotateCcw,
+  Coffee,
+  BookOpen,
+  Sparkles,
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import AttendanceRing from "./AttendanceRing.jsx";
 
 const TARGET_PRESETS = [60, 75, 80, 85, 90];
 
 export default function BunkSimulator({ summary }) {
+  const [isOpen, setIsOpen] = useState(false);
   const [targetGoal, setTargetGoal] = useState(summary?.goal || 75);
   const [daysToBunk, setDaysToBunk] = useState(0);
   const [daysToAttend, setDaysToAttend] = useState(0);
@@ -42,32 +55,134 @@ export default function BunkSimulator({ summary }) {
     setTargetGoal(summary.goal || 75);
   };
 
+  if (!isOpen) {
+    return (
+      <div
+        className="card"
+        style={{
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "center",
+          justify: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+          padding: "16px 20px",
+          background: "var(--panel)",
+          border: "1px solid var(--border)",
+          transition: "all 0.2s ease",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flex: "1 1 300px" }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: "var(--accent-soft)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--accent)",
+              flexShrink: 0,
+            }}
+          >
+            <Target size={22} />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+              Smart Bunk Predictor & Attendance Simulator
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+              Simulate future bunks/attends, test target goals, and forecast attendance recovery.
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setIsOpen(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+            padding: "8px 16px",
+            background: "var(--accent)",
+            color: "var(--accent-text)",
+            borderRadius: 10,
+            cursor: "pointer",
+            fontWeight: 500,
+          }}
+        >
+          <Sliders size={16} />
+          Open Simulator
+          <ChevronDown size={16} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="card" style={{ marginBottom: 20, position: "relative", overflow: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <div>
-          <div className="label" style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-            🎯 Smart Bunk Predictor & Attendance Simulator
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Target size={20} color="var(--accent)" />
+          <div>
+            <div className="label" style={{ fontSize: 16, fontWeight: 600 }}>
+              Smart Bunk Predictor & Attendance Simulator
+            </div>
+            <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+              Simulate future class bunks/attends and forecast your attendance status in real-time.
+            </p>
           </div>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
-            Simulate future class bunks/attends and forecast your attendance status in real-time.
-          </p>
         </div>
-        {(daysToBunk > 0 || daysToAttend > 0 || targetGoal !== summary.goal) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {(daysToBunk > 0 || daysToAttend > 0 || targetGoal !== summary.goal) && (
+            <button
+              className="btn"
+              onClick={resetSimulation}
+              style={{
+                fontSize: 12,
+                padding: "6px 12px",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border-strong)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <RotateCcw size={14} />
+              Reset
+            </button>
+          )}
           <button
+            type="button"
             className="btn"
-            onClick={resetSimulation}
-            style={{ fontSize: 12, padding: "4px 12px", background: "var(--bg-elevated)", border: "1px solid var(--border-strong)" }}
+            onClick={() => setIsOpen(false)}
+            style={{
+              fontSize: 12,
+              padding: "6px 12px",
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border-strong)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
           >
-            ↺ Reset
+            Close Simulator
+            <ChevronUp size={14} />
           </button>
-        )}
+        </div>
       </div>
 
       {/* Target Goal Presets Selector */}
       <div style={{ marginBottom: 20, background: "var(--bg-elevated)", padding: "12px 16px", borderRadius: 12, border: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>Target Attendance Goal:</span>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+            <Sparkles size={16} color="var(--accent)" />
+            Target Attendance Goal:
+          </span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {TARGET_PRESETS.map((preset) => (
               <button
@@ -99,7 +214,8 @@ export default function BunkSimulator({ summary }) {
           <div style={{ background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--absent)", display: "flex", alignItems: "center", gap: 6 }}>
-                😴 Upcoming Days to Bunk:
+                <Coffee size={16} />
+                Upcoming Days to Bunk:
               </span>
               <span style={{ fontSize: 15, fontWeight: 700, color: "var(--absent)" }}>+{daysToBunk} day{daysToBunk !== 1 ? "s" : ""}</span>
             </div>
@@ -122,7 +238,8 @@ export default function BunkSimulator({ summary }) {
           <div style={{ background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--present)", display: "flex", alignItems: "center", gap: 6 }}>
-                📚 Upcoming Days to Attend:
+                <BookOpen size={16} />
+                Upcoming Days to Attend:
               </span>
               <span style={{ fontSize: 15, fontWeight: 700, color: "var(--present)" }}>+{daysToAttend} day{daysToAttend !== 1 ? "s" : ""}</span>
             </div>
@@ -169,12 +286,18 @@ export default function BunkSimulator({ summary }) {
           {/* Smart Predictor Insights Badges */}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
             {isMeetingGoal ? (
-              <div style={{ padding: "8px 12px", background: "rgba(79, 168, 138, 0.12)", border: "1px solid var(--present)", borderRadius: 8, fontSize: 13, color: "var(--text)" }}>
-                🎉 <strong>Safe Buffer:</strong> You can safely miss <strong>{safeBunks}</strong> more consecutive day(s) and stay above your {targetGoal}% target.
+              <div style={{ padding: "8px 12px", background: "rgba(79, 168, 138, 0.12)", border: "1px solid var(--present)", borderRadius: 8, fontSize: 13, color: "var(--text)", display: "flex", gap: 8, alignItems: "start" }}>
+                <CheckCircle2 size={18} color="var(--present)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <strong>Safe Buffer:</strong> You can safely miss <strong>{safeBunks}</strong> more consecutive day(s) and stay above your {targetGoal}% target.
+                </div>
               </div>
             ) : (
-              <div style={{ padding: "8px 12px", background: "rgba(193, 85, 74, 0.12)", border: "1px solid var(--absent)", borderRadius: 8, fontSize: 13, color: "var(--text)" }}>
-                ⚠️ <strong>Goal Alert:</strong> You are below your {targetGoal}% target. You must attend the next <strong>{daysNeeded}</strong> consecutive day(s) without bunking to recover.
+              <div style={{ padding: "8px 12px", background: "rgba(193, 85, 74, 0.12)", border: "1px solid var(--absent)", borderRadius: 8, fontSize: 13, color: "var(--text)", display: "flex", gap: 8, alignItems: "start" }}>
+                <AlertTriangle size={18} color="var(--absent)" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <strong>Goal Alert:</strong> You are below your {targetGoal}% target. You must attend the next <strong>{daysNeeded}</strong> consecutive day(s) without bunking to recover.
+                </div>
               </div>
             )}
 
