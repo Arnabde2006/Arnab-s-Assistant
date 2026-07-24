@@ -46,7 +46,8 @@ export default function BunkSimulator({ summary }) {
   const simCollegeMax = currentCollegeMax + (daysToAttend + daysToBunk) * 2;
   const simCollegePercentage = simCollegeMax === 0 ? 0 : Math.round(((simCollegeEarned / simCollegeMax) * 100) * 10) / 10;
 
-  const isMeetingGoal = simPercentage >= targetGoal;
+  const isMeetingGoal = simTotal === 0 || simPercentage >= targetGoal;
+  const ringColor = simTotal === 0 ? "var(--accent)" : isMeetingGoal ? "var(--present)" : "var(--absent)";
   const percentageDelta = Math.round((simPercentage - summary.percentage) * 10) / 10;
 
   const resetSimulation = () => {
@@ -260,16 +261,16 @@ export default function BunkSimulator({ summary }) {
         </div>
 
         {/* Forecast Output Column */}
-        <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 16, border: `1px solid ${isMeetingGoal ? "var(--present)" : "var(--absent)"}`, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 16, border: `1px solid ${ringColor}`, display: "flex", flexDirection: "column", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <AttendanceRing
               percentage={simPercentage}
-              color={isMeetingGoal ? "var(--present)" : "var(--absent)"}
+              color={ringColor}
               size={90}
             />
             <div style={{ flexGrow: 1 }}>
               <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-muted)" }}>Projected Attendance</div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: isMeetingGoal ? "var(--present)" : "var(--absent)" }}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: ringColor }}>
                 {simPercentage}%
                 {(daysToBunk > 0 || daysToAttend > 0) && (
                   <span style={{ fontSize: 13, fontWeight: 500, marginLeft: 8, color: percentageDelta >= 0 ? "var(--present)" : "var(--absent)" }}>
@@ -285,7 +286,14 @@ export default function BunkSimulator({ summary }) {
 
           {/* Smart Predictor Insights Badges */}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-            {isMeetingGoal ? (
+            {simTotal === 0 ? (
+              <div style={{ padding: "8px 12px", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: 8, fontSize: 13, color: "var(--text)", display: "flex", gap: 8, alignItems: "center" }}>
+                <Sparkles size={18} color="var(--accent)" style={{ flexShrink: 0 }} />
+                <div>
+                  <strong>Get Started:</strong> No attendance recorded yet. Mark your attendance below or adjust the sliders above to simulate your schedule!
+                </div>
+              </div>
+            ) : isMeetingGoal ? (
               <div style={{ padding: "8px 12px", background: "rgba(79, 168, 138, 0.12)", border: "1px solid var(--present)", borderRadius: 8, fontSize: 13, color: "var(--text)", display: "flex", gap: 8, alignItems: "start" }}>
                 <CheckCircle2 size={18} color="var(--present)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <div>
