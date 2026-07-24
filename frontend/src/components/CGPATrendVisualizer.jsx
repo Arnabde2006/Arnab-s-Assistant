@@ -14,6 +14,307 @@ import {
 
 const TARGET_PRESETS = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5];
 
+// ── SVG Trend Chart Component ─────────────────────────────────────────────
+function CGPATrendChart({
+  historyTrend,
+  futureSemesters,
+  simulatedFutureSGPA,
+  currentPoints,
+  currentCredits,
+  targetCGPA,
+}) {
+  const futureCreditsPerSem = 20;
+
+  // Build full sequence of data points (Historical + Projected Future)
+  const allPoints = [];
+
+  // Historical points
+  historyTrend.forEach((h, idx) => {
+    allPoints.push({
+      label: h.semester,
+      shortLabel: `Sem ${idx + 1}`,
+      sgpa: h.sgpa,
+      cgpa: h.runningCGPA,
+      isFuture: false,
+    });
+  });
+
+  // Projected future points
+  let lastPoints = currentPoints;
+  let lastCredits = currentCredits;
+  const histCount = historyTrend.length;
+
+  for (let j = 1; j <= futureSemesters; j++) {
+    lastCredits += futureCreditsPerSem;
+    lastPoints += simulatedFutureSGPA * futureCreditsPerSem;
+    const stepCGPA = lastCredits > 0 ? Math.round((lastPoints / lastCredits) * 100) / 100 : 0;
+
+    allPoints.push({
+      label: `Sem ${histCount + j} (Proj)`,
+      shortLabel: `Sem ${histCount + j}*`,
+      sgpa: simulatedFutureSGPA,
+      cgpa: stepCGPA,
+      isFuture: true,
+    });
+  }
+
+  if (allPoints.length === 0) {
+    return (
+      <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "20px 0", textAlign: "center" }}>
+        No semester data available to plot chart.
+      </div>
+    );
+  }
+
+  const svgWidth = 640;
+  const svgHeight = 220;
+  const paddingLeft = 45;
+  const paddingRight = 45;
+  const paddingTop = 32;
+  const paddingBottom = 40;
+
+  const chartW = svgWidth - paddingLeft - paddingRight;
+  const chartH = svgHeight - paddingTop - paddingBottom;
+
+  const minY = 5.0;
+  const maxY = 10.0;
+
+  const getY = (val) => {
+    const clamped = Math.min(10.0, Math.max(5.0, val));
+    return paddingTop + (1 - (clamped - minY) / (maxY - minY)) * chartH;
+  };
+
+  const getX = (idx) => {
+    if (allPoints.length <= 1) return paddingLeft + chartW / 2;
+    return paddingLeft + (idx / (allPoints.length - 1)) * chartW;
+  };
+
+  // Find index split between historical and future
+  const histCutoffIdx = historyTrend.length > 0 ? historyTrend.length - 1 : 0;
+
+  // Build SVG Path strings
+  const buildPath = (key, startIdx, endIdx) => {
+    let d = "";
+    for (let i = startIdx; i <= endIdx; i++) {
+      const p = allPoints[i];
+      const x = getX(i);
+      const y = getY(p[key]);
+      d += i === startIdx ? `M ${x} ${y}` : ` L ${x} ${y}`;
+    }
+    return d;
+  };
+
+  // Paths
+  const histCGPAPath = historyTrend.length > 0 ? buildPath("cgpa", 0, histCutoffIdx) : "";
+  const projCGPAPath = allPoints.length > histCutoffIdx + 1 ? buildPath("cgpa", histCutoffIdx, allPoints.length - 1) : "";
+
+  const histSGPAPath = historyTrend.length > 0 ? buildPath("sgpa", 0, histCutoffIdx) : "";
+  const projSGPAPath = allPoints.length > histCutoffIdx + 1 ? buildPath("sgpa", histCutoffIdx, allPoints.length - 1) : "";
+
+  // Gradient area path for CGPA
+  let areaPath = "";
+  if (allPoints.length > 0) {
+    const firstX = getX(0);
+    const lastX = getX(allPoints.length - 1);
+    const bottomY = getY(minY);
+    areaPath = `M ${firstX} ${bottomY}`;
+    allPoints.forEach((p, idx) => {
+      areaPath += ` L ${getX(idx)} ${getY(p.cgpa)}`;
+    });
+    areaPath += ` L ${lastX} ${bottomY} Z`;
+  }
+
+  const targetY = getY(targetCGPA);
+
+  return (
+    <div style={{ width: "100%", overflowX: "auto", position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        style={{ width: "100%", height: "auto", minWidth: 500, overflow: "visible" }}
+      >
+        <defs>
+          <linearGradient id="cgpaAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--present)" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="var(--present)" stopOpacity="0.0" />
+          </linearGradient>
+        </defs>
+
+        {/* Y Grid lines & Y labels */}
+        {[10.0, 9.0, 8.0, 7.0, 6.0, 5.0].map((val) => {
+          const y = getY(val);
+          return (
+            <g key={val}>
+              <line
+                x1={paddingLeft}
+                y1={y}
+                x2={svgWidth - paddingRight}
+                y2={y}
+                stroke="var(--border)"
+                strokeDasharray="3 3"
+                strokeWidth="1"
+              />
+              <text
+                x={paddingLeft - 8}
+                y={y + 4}
+                textAnchor="end"
+                fill="var(--text-muted)"
+                style={{ fontSize: 10, fontFamily: "var(--font-mono)" }}
+              >
+                {val.toFixed(1)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Target CGPA Reference Line */}
+        <line
+          x1={paddingLeft}
+          y1={targetY}
+          x2={svgWidth - paddingRight}
+          y2={targetY}
+          stroke="var(--accent)"
+          strokeDasharray="4 4"
+          strokeWidth="1.5"
+        />
+        <text
+          x={svgWidth - paddingRight + 4}
+          y={targetY + 3}
+          textAnchor="start"
+          fill="var(--accent)"
+          style={{ fontSize: 10, fontWeight: 600, fontFamily: "var(--font-mono)" }}
+        >
+          Target ({targetCGPA.toFixed(1)})
+        </text>
+
+        {/* Filled CGPA Gradient Area */}
+        {areaPath && <path d={areaPath} fill="url(#cgpaAreaGrad)" />}
+
+        {/* Historical SGPA Line (Thin Accent) */}
+        {histSGPAPath && (
+          <path
+            d={histSGPAPath}
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="1.5"
+            strokeOpacity="0.6"
+          />
+        )}
+
+        {/* Projected SGPA Line (Dashed Thin Accent) */}
+        {projSGPAPath && (
+          <path
+            d={projSGPAPath}
+            fill="none"
+            stroke="var(--accent)"
+            strokeDasharray="4 3"
+            strokeWidth="1.5"
+            strokeOpacity="0.8"
+          />
+        )}
+
+        {/* Historical CGPA Line (Thick Present Color) */}
+        {histCGPAPath && (
+          <path
+            d={histCGPAPath}
+            fill="none"
+            stroke="var(--present)"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {/* Projected CGPA Line (Thick Dashed) */}
+        {projCGPAPath && (
+          <path
+            d={projCGPAPath}
+            fill="none"
+            stroke="var(--present)"
+            strokeDasharray="6 4"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {/* Nodes & Labels */}
+        {allPoints.map((p, idx) => {
+          const x = getX(idx);
+          const yCGPA = getY(p.cgpa);
+          const ySGPA = getY(p.sgpa);
+          const isFut = p.isFuture;
+
+          return (
+            <g key={idx}>
+              {/* X-axis label */}
+              <text
+                x={x}
+                y={svgHeight - 12}
+                textAnchor="middle"
+                fill={isFut ? "var(--accent)" : "var(--text-muted)"}
+                style={{ fontSize: 11, fontWeight: isFut ? 600 : 500 }}
+              >
+                {p.shortLabel}
+              </text>
+
+              {/* SGPA small dot */}
+              <circle
+                cx={x}
+                cy={ySGPA}
+                r="3"
+                fill={isFut ? "var(--accent)" : "var(--accent)"}
+                opacity="0.8"
+              />
+
+              {/* CGPA Node Outer Ring */}
+              <circle
+                cx={x}
+                cy={yCGPA}
+                r="6"
+                fill="var(--panel)"
+                stroke={isFut ? "var(--accent)" : "var(--present)"}
+                strokeWidth="2.5"
+              />
+
+              {/* CGPA Node Value Badge */}
+              <text
+                x={x}
+                y={yCGPA - 10}
+                textAnchor="middle"
+                fill={isFut ? "var(--accent)" : "var(--text)"}
+                style={{ fontSize: 11, fontWeight: 700, fontFamily: "var(--font-mono)" }}
+              >
+                {p.cgpa.toFixed(2)}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Graph Legend */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 20, marginTop: 8, fontSize: 11, color: "var(--text-muted)", flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 16, height: 3, background: "var(--present)", borderRadius: 2 }} />
+          Cumulative CGPA
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 16, height: 2, background: "var(--accent)", opacity: 0.7 }} />
+          Semester SGPA
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 14, borderTop: "1.5px dashed var(--accent)" }} />
+          Target Line ({targetCGPA.toFixed(1)})
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 14, borderTop: "2px dashed var(--present)" }} />
+          Projected Future
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────
 export default function CGPATrendVisualizer({ data }) {
   const [isOpen, setIsOpen] = useState(false);
   const [targetCGPA, setTargetCGPA] = useState(8.5);
@@ -55,7 +356,6 @@ export default function CGPATrendVisualizer({ data }) {
   const requiredSGPA = Math.round(rawRequiredSGPA * 100) / 100;
 
   const isAchievable = rawRequiredSGPA <= 10.0;
-  const isAlreadyAchieved = currentCredits > 0 && currentCGPA >= targetCGPA;
 
   // Projected CGPA based on future SGPA slider
   const simFuturePoints = simulatedFutureSGPA * totalFutureCredits;
@@ -68,8 +368,6 @@ export default function CGPATrendVisualizer({ data }) {
     setFutureSemesters(2);
     setSimulatedFutureSGPA(8.0);
   };
-
-  const maxSgpaValue = 10;
 
   if (!isOpen) {
     return (
@@ -109,7 +407,7 @@ export default function CGPATrendVisualizer({ data }) {
               Semester-wise CGPA Trend Visualizer & Simulator
             </div>
             <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-              Track semester SGPA trajectory and simulate required future grades for your target CGPA.
+              Track semester SGPA trajectory graph and simulate required future grades for your target CGPA.
             </p>
           </div>
         </div>
@@ -192,48 +490,21 @@ export default function CGPATrendVisualizer({ data }) {
         </div>
       </div>
 
-      {/* Historical Trend Chart */}
+      {/* SVG Interactive Trend Graph */}
       <div style={{ marginBottom: 20, background: "var(--bg-elevated)", padding: 16, borderRadius: 12, border: "1px solid var(--border)" }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
           <Award size={16} color="var(--accent)" />
-          Semester Performance Breakdown ({historyTrend.length} semester{historyTrend.length !== 1 ? "s" : ""})
+          CGPA & SGPA Trajectory Chart ({historyTrend.length} semester{historyTrend.length !== 1 ? "s" : ""} + {futureSemesters} forecasted)
         </div>
 
-        {historyTrend.length === 0 ? (
-          <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "12px 0" }}>
-            No semester grade cards uploaded yet. Upload a grade card above to see your trend chart!
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {historyTrend.map((h, i) => {
-              const sgpaPct = (h.sgpa / maxSgpaValue) * 100;
-              const cgpaPct = (h.runningCGPA / maxSgpaValue) * 100;
-              const sgpaColor = h.sgpa >= 8.5 ? "#4fa88a" : h.sgpa >= 7 ? "#4c7eff" : h.sgpa >= 5.5 ? "#f59e0b" : "#c1554a";
-
-              return (
-                <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 500 }}>
-                    <span>{h.semester} <span style={{ color: "var(--text-muted)", fontSize: 11 }}>({h.credits} credits)</span></span>
-                    <span style={{ fontFamily: "var(--font-mono)" }}>
-                      SGPA: <strong style={{ color: sgpaColor }}>{h.sgpa}</strong> · Cumulative CGPA: <strong>{h.runningCGPA}</strong>
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", height: 10, background: "var(--border)", borderRadius: 6, overflow: "hidden", position: "relative" }}>
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${sgpaPct}%`,
-                        background: sgpaColor,
-                        borderRadius: 6,
-                        transition: "width 0.6s ease",
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <CGPATrendChart
+          historyTrend={historyTrend}
+          futureSemesters={futureSemesters}
+          simulatedFutureSGPA={simulatedFutureSGPA}
+          currentPoints={currentPoints}
+          currentCredits={currentCredits}
+          targetCGPA={targetCGPA}
+        />
       </div>
 
       {/* Target CGPA Preset Selector */}
