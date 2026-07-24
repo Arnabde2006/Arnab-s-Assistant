@@ -322,11 +322,34 @@ export default function CGPATrendVisualizer({ data }) {
         </div>
 
         {/* Forecast Output Column */}
-        <div style={{ background: "var(--bg-elevated)", padding: 20, borderRadius: 16, border: `1px solid ${projectedCGPA >= targetCGPA ? "var(--present)" : "var(--accent)"}`, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div
+          style={{
+            background: "var(--bg-elevated)",
+            padding: 20,
+            borderRadius: 16,
+            border: `1px solid ${
+              projectedCGPA >= targetCGPA
+                ? "var(--present)"
+                : isAchievable
+                ? "var(--accent)"
+                : "var(--absent)"
+            }`,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <div style={{ flexGrow: 1 }}>
               <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "var(--text-muted)" }}>Projected Final CGPA</div>
-              <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "var(--font-mono)", color: projectedCGPA >= targetCGPA ? "var(--present)" : "var(--text)" }}>
+              <div
+                style={{
+                  fontSize: 28,
+                  fontWeight: 700,
+                  fontFamily: "var(--font-mono)",
+                  color: projectedCGPA >= targetCGPA ? "var(--present)" : projectedCGPA < currentCGPA ? "var(--absent)" : "var(--text)",
+                }}
+              >
                 {projectedCGPA > 0 ? projectedCGPA.toFixed(2) : "—"}
                 {cgpaDelta !== 0 && (
                   <span style={{ fontSize: 13, fontWeight: 500, marginLeft: 8, color: cgpaDelta >= 0 ? "var(--present)" : "var(--absent)" }}>
@@ -349,25 +372,25 @@ export default function CGPATrendVisualizer({ data }) {
                   <strong>Get Started:</strong> Upload your semester grade card above to calculate exact target requirements!
                 </div>
               </div>
-            ) : isAlreadyAchieved ? (
+            ) : projectedCGPA >= targetCGPA ? (
               <div style={{ padding: "8px 12px", background: "rgba(79, 168, 138, 0.12)", border: "1px solid var(--present)", borderRadius: 8, fontSize: 13, color: "var(--text)", display: "flex", gap: 8, alignItems: "start" }}>
                 <CheckCircle2 size={18} color="var(--present)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <div>
-                  <strong>Goal Achieved:</strong> Your current CGPA (<strong>{currentCGPA.toFixed(2)}</strong>) already meets your target goal of <strong>{targetCGPA.toFixed(1)}</strong>!
+                  <strong>Goal Achieved:</strong> With an average future SGPA of <strong>{simulatedFutureSGPA.toFixed(2)}</strong>, your projected CGPA will be <strong>{projectedCGPA.toFixed(2)}</strong> (meets your <strong>{targetCGPA.toFixed(1)}</strong> target)!
                 </div>
               </div>
             ) : isAchievable ? (
               <div style={{ padding: "8px 12px", background: "rgba(76, 126, 255, 0.12)", border: "1px solid var(--accent)", borderRadius: 8, fontSize: 13, color: "var(--text)", display: "flex", gap: 8, alignItems: "start" }}>
                 <CheckCircle2 size={18} color="var(--accent)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <div>
-                  <strong>Target Required SGPA:</strong> Maintain an average SGPA of <strong>{requiredSGPA > 0 ? requiredSGPA.toFixed(2) : "0.00"}</strong> over the next {futureSemesters} semester(s) to reach <strong>{targetCGPA.toFixed(1)}</strong> CGPA.
+                  <strong>Target Required SGPA:</strong> With an SGPA of <strong>{simulatedFutureSGPA.toFixed(2)}</strong>, projected CGPA drops to <strong>{projectedCGPA.toFixed(2)}</strong>. You must maintain an average SGPA of <strong>{requiredSGPA > 0 ? requiredSGPA.toFixed(2) : "0.00"}</strong> over the next {futureSemesters} semester(s) to reach <strong>{targetCGPA.toFixed(1)}</strong> CGPA.
                 </div>
               </div>
             ) : (
               <div style={{ padding: "8px 12px", background: "rgba(193, 85, 74, 0.12)", border: "1px solid var(--absent)", borderRadius: 8, fontSize: 13, color: "var(--text)", display: "flex", gap: 8, alignItems: "start" }}>
                 <AlertTriangle size={18} color="var(--absent)" style={{ flexShrink: 0, marginTop: 2 }} />
                 <div>
-                  <strong>Target Challenge:</strong> Reaching <strong>{targetCGPA.toFixed(1)}</strong> CGPA would require an average SGPA of <strong>{requiredSGPA.toFixed(2)}</strong> (&gt; 10.00 max). Consider increasing future semesters or adjusting your target goal.
+                  <strong>Target Challenge:</strong> Reaching <strong>{targetCGPA.toFixed(1)}</strong> CGPA would require an average SGPA of <strong>{requiredSGPA.toFixed(2)}</strong> (&gt; 10.00 max). Consider forecasting more semesters or adjusting your target goal.
                 </div>
               </div>
             )}
