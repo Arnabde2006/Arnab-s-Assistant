@@ -22,23 +22,25 @@ database directly — it only calls `backend`'s HTTP routes via
 ```
 backend/
   server.js              Entry point. Wires up middleware + mounts every route file.
-  db.js                  Postgres connection (Neon).
+  db.js                  Postgres connection (Neon/pg-pool).
   schema.sql             The entire database structure, in one file.
   gemini.js              One function: callGemini(). Everything AI-related goes through it.
   lib/
-    attendanceSummary.js Attendance math (percentage, "safe to miss", the college
-                          points system). Both the normal attendance route and the
-                          public view-only route call this — one source of truth.
+    attendanceSummary.js Attendance math (percentage, "safe to miss", college points system).
+                          Shared by normal attendance route & public view-only route.
+    financeSummary.js    Finance math (monthly income, expense, net, category breakdown, budget).
   middleware/
     auth.js               Checks the JWT on protected routes, sets req.userId.
   routes/
-    auth.js                register / login / me / view-token
-    subjects.js             CRUD for subjects (used by Timetable)
+    auth.js                register / login / me (profile & budget update) / view-token
+    subjects.js             CRUD for subjects (used by Timetable & Attendance)
     attendance.js            mark/list/summary for day-wise attendance
-    todos.js                CRUD for to-dos + the note-to-date parsing
+    todos.js                CRUD for to-dos + note-to-date parsing
     timetable.js             CRUD for weekly class slots
-    ai.js                    chat, exam-timetable upload, grade-card upload
-    dashboard.js              streaks + today's counts
+    finance.js               Income/expense CRUD, bulk category updates & delete, AI statement upload
+    grades.js                CRUD for semester courses, SGPA/CGPA calculations, grade card OCR upload
+    ai.js                    AI chat assistant (with injected context), exam & grade card upload
+    dashboard.js              streaks, upcoming exams, today's counts & summary metrics
     view.js                   the public read-only endpoint (no login needed)
     holidays.js                mark/list/delete "no college" days + holiday-list upload
   utils/
@@ -61,26 +63,37 @@ frontend/src/
                            when adding a new page.
   index.css               Every color, font, spacing value as CSS variables at
                            the top (`:root`, `[data-theme="ink"]`, `[data-theme="parchment"]`).
-                           Change a value here and it updates everywhere.
+                           Custom checkbox (`.custom-checkbox`), buttons, grids, animations.
   context/
     AuthContext.jsx        Holds the logged-in user + login/register/logout.
     ThemeContext.jsx        Holds "ink" or "parchment", persists to localStorage.
   api/
-    client.js               Tiny fetch wrapper — adds the auth token, throws on errors.
+    client.js               Tiny fetch wrapper — adds auth token, handles GET/POST/PUT/DELETE,
+                           supports streaming SSE for AI chat via postStream.
   components/
-    Sidebar.jsx              Desktop nav (hidden below 720px). Links live in the
-                             `links` array at the top — add a page there too.
-    MobileNav.jsx             Mobile bottom tab bar + "More" sheet (shown below
-                             720px instead of Sidebar). Has its own `primaryLinks`
-                             (the 4 tabs) and `moreLinks` (in the sheet) arrays —
-                             add a new page to one of those, not Sidebar's list.
-    AttendanceRing.jsx       The circular progress ring, reused in a few places.
+    Sidebar.jsx              Desktop nav (hidden below 720px). Links live in the `links` array.
+    MobileNav.jsx             Mobile bottom tab bar + "More" sheet (shown below 720px).
+    FileUpload.jsx            Drag-and-drop file uploader for statements/screenshots/PDFs.
+    BunkSimulator.jsx         Interactive attendance & bunk calculator simulator.
+    CGPATrendVisualizer.jsx   CGPA / SGPA progress visualizer.
+    ViewOnlyLinkCard.jsx      Shareable view-only link generator card.
+    AttendanceRing.jsx       Circular progress ring, reused in dashboard & attendance.
     ThemeToggle.jsx          The ink/parchment switch buttons.
     Switch.jsx                Generic on/off toggle (used for "show college-off days").
   pages/
-    One file per page, matching the sidebar. Each page fetches its own data
-    with `api.get(...)` in a `useEffect`, keeps it in `useState`, and renders it.
-    There's no global state library — every page is self-contained.
+    Dashboard.jsx            Streaks, attendance summary, to-dos, upcoming exams & finance preview.
+    Attendance.jsx           Subject-wise attendance, day logger, bunk predictor & simulator.
+    Finance.jsx              Monthly finance summary, statement upload, month navigation picker,
+                             category breakdown (`Family`, `Food`, `Hostel/Rent`, `Travel`,
+                             `Subscriptions`, `Shopping`, `Education`, `Entertainment`, `Other`),
+                             optional bulk selection & category edit.
+    Grades.jsx               Semester-wise grade tracker, SGPA/CGPA visualizer, grade card OCR upload.
+    Timetable.jsx            Weekly schedule planner & slot manager.
+    Todos.jsx                To-do list manager & assignment tracker.
+    AIChat.jsx               Streaming AI assistant with student context.
+    Profile.jsx              User profile settings, monthly budget configuration, password update,
+                             and view-only link regeneration.
+    ViewOnly.jsx             Public read-only dashboard for shared view-only links.
 ```
 
 ## How do I... (common edits)
@@ -98,52 +111,30 @@ app. `--font-display` is the serif headings, `--font-body` is everything else.
    are separate because there's only room for 4 tabs plus "More" on a phone.
 3. Add a `<Route>` for it in `App.jsx`.
 
+**Add a new financial category** (e.g. "Healthcare").
+1. Add `"healthcare"` to the `CATEGORIES` array in `backend/lib/financeSummary.js`.
+2. Add `"healthcare"` to the category list in Gemini's upload system prompt in `backend/routes/finance.js`.
+3. Add `healthcare: "Healthcare"` to `CATEGORY_LABELS` in `frontend/src/pages/Finance.jsx`.
+
+**Perform bulk updates on transactions.**
+The API provides `PUT /api/finance/transactions/bulk` taking `{ ids: [...], category: "..." }` and `DELETE /api/finance/transactions/bulk`. On the frontend, toggle "Bulk Edit / Select" mode in `Finance.jsx` to select items and apply category changes.
+
+**How statement deduplication works.**
+When uploading bank statements or UPI screenshots via `POST /api/finance/upload`, the backend queries existing transactions matching `(user_id, date, amount, type, LOWER(merchant))` before inserting to avoid double-counting.
+
 **Add a field to an existing table** (e.g. a "location" field on exams).
 1. Add the column in `schema.sql` using `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
-   so it's safe to re-run (see how `view_token` was added to `users` as an example).
+   so it's safe to re-run.
 2. Run `npm run migrate` in `backend/` to apply it.
 3. Update the relevant route in `backend/routes/` to read/write the new column.
 4. Update the relevant page in `frontend/src/pages/` to show/edit it.
 
-**Change the attendance goal default (currently 75%).**
-`attendance_goal INTEGER NOT NULL DEFAULT 75` in `schema.sql` sets it for
-new accounts. It's also editable per-user via `PUT /api/auth/me`
-(`attendanceGoal` field) — there's no UI for that yet, so you'd add a
-small form on a settings/profile page if you want users to change it themselves.
-
-**Change how the AI responds** (chat tone, exam-parsing rules, grade rules).
-Each prompt lives directly in `backend/routes/ai.js` as a
-`systemInstruction` string — one for chat, one for exam timetables, one for
-grade cards. Edit the text directly; no templating system to fight with.
-
-**Change the note-to-date parsing** (e.g. add a new phrase like "next week").
-It's all in `backend/utils/parseDate.js`, a single function with plain
-regex checks in order (explicit date → "in N days" → "tomorrow"/"today" →
-month name → weekday name → fallback to today). Add a new `if` block in
-the same style.
-
-**Add a new attendance status** (e.g. "on duty" / "medical leave").
-1. Add it to the `CHECK` constraint on `day_attendance.status` in `schema.sql`,
-   then re-run migrate.
-2. Add it to the `["present", "absent", "half_day"]` validation list in
-   `backend/routes/attendance.js`.
-3. Decide its point value in `backend/lib/attendanceSummary.js` (search for
-   `collegeEarned` — that's where present=2, half_day=1, absent=0 is defined).
-4. Add it to `STATUS_META` in `frontend/src/pages/Attendance.jsx`.
-
-**A note on how "no college" days work.**
-`day_attendance` (present/absent/half-day) and `college_holidays` (no
-college) are two separate tables, and a date can only be in one of them —
-whichever route runs last deletes the other's row for that date first (see
-the `DELETE FROM ...` line at the top of the `POST /` handlers in both
-`attendance.js` and `holidays.js`). That's why the attendance percentage
-"just works" without any special-casing: a holiday date never has a
-`day_attendance` row, so it's automatically excluded from the total.
-If you ever add a third status table like this, keep that same
-delete-the-other-one-first pattern or the math will double-count.
+**Change how the AI responds** (chat tone, exam-parsing rules, statement parsing).
+Each prompt lives directly in `backend/routes/ai.js` or `backend/routes/finance.js` as a
+`systemInstruction` string — edit the text directly; no templating system to fight with.
 
 **Nothing here covers what you're trying to do?**
-Every file is under ~150 lines on purpose. If you're not sure where
+Every file is kept small and modular on purpose. If you're not sure where
 something lives, search the codebase for the text you see on screen (e.g.
-search for `"Attendance streak"` to find the dashboard code that renders it)
+search for `"Spending by category"` to find the finance code that renders it)
 — that will land you in the right file almost every time.
