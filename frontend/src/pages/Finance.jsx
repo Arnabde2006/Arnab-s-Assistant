@@ -48,6 +48,9 @@ export default function Finance() {
   const [transactions, setTransactions] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [txFilter, setTxFilter] = useState("all"); // "all" or "month"
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const currentMonthStr = new Date().toISOString().slice(0, 7);
 
@@ -89,6 +92,7 @@ export default function Finance() {
 
   async function removeTransaction(id) {
     await api.del(`/finance/transactions/${id}`);
+    setSelectedIds((prev) => prev.filter((i) => i !== id));
     refresh(selectedMonth);
   }
 
@@ -133,6 +137,49 @@ export default function Finance() {
     : transactions;
 
   const isCurrentMonth = selectedMonth === currentMonthStr;
+
+  function toggleSelectAll() {
+    const visibleIds = filteredTransactions.slice(0, 60).map((t) => t.id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  }
+
+  function toggleSelectOne(id) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  }
+
+  async function handleBulkCategoryChange(e) {
+    e.preventDefault();
+    if (!bulkCategory || selectedIds.length === 0) return;
+    setBulkUpdating(true);
+    try {
+      await api.put("/finance/transactions/bulk", { ids: selectedIds, category: bulkCategory });
+      setSelectedIds([]);
+      setBulkCategory("");
+      refresh(selectedMonth);
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected transaction(s)?`)) return;
+    setBulkUpdating(true);
+    try {
+      await api.del("/finance/transactions/bulk", { ids: selectedIds });
+      setSelectedIds([]);
+      refresh(selectedMonth);
+    } finally {
+      setBulkUpdating(false);
+    }
+  }
 
   return (
     <div>
@@ -312,8 +359,24 @@ export default function Finance() {
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-          <div className="label" style={{ margin: 0 }}>
-            {txFilter === "month" ? `Transactions in ${formatMonthName(selectedMonth)}` : "All transactions"}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="label" style={{ margin: 0 }}>
+              {txFilter === "month" ? `Transactions in ${formatMonthName(selectedMonth)}` : "All transactions"}
+            </div>
+            {filteredTransactions.length > 0 && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", color: "var(--text-muted)" }}>
+                <input
+                  type="checkbox"
+                  checked={
+                    filteredTransactions.length > 0 &&
+                    filteredTransactions.slice(0, 60).every((t) => selectedIds.includes(t.id))
+                  }
+                  onChange={toggleSelectAll}
+                  style={{ cursor: "pointer" }}
+                />
+                Select All
+              </label>
+            )}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button
@@ -334,6 +397,47 @@ export default function Finance() {
             </button>
           </div>
         </div>
+
+        {selectedIds.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "10px 14px", borderRadius: 8, background: "var(--accent-soft)", marginBottom: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{selectedIds.length} item(s) selected</span>
+            <form onSubmit={handleBulkCategoryChange} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                className="input"
+                value={bulkCategory}
+                onChange={(e) => setBulkCategory(e.target.value)}
+                style={{ fontSize: 12, padding: "5px 10px", width: "auto" }}
+                required
+              >
+                <option value="">Bulk category change to...</option>
+                {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+              <button className="btn" type="submit" disabled={bulkUpdating || !bulkCategory} style={{ fontSize: 12, padding: "5px 12px" }}>
+                Apply Category
+              </button>
+            </form>
+            <button
+              type="button"
+              className="btn-ghost btn"
+              style={{ fontSize: 12, padding: "5px 12px", color: "var(--absent)" }}
+              onClick={handleBulkDelete}
+              disabled={bulkUpdating}
+            >
+              Delete Selected
+            </button>
+            <button
+              type="button"
+              className="btn-ghost btn"
+              style={{ fontSize: 12, padding: "5px 12px" }}
+              onClick={() => setSelectedIds([])}
+            >
+              Deselect
+            </button>
+          </div>
+        )}
+
         {filteredTransactions.length === 0 && (
           <div className="empty-state">
             {txFilter === "month" ? `No transactions recorded for ${formatMonthName(selectedMonth)}.` : "No transactions yet."}
@@ -341,7 +445,14 @@ export default function Finance() {
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {filteredTransactions.slice(0, 60).map((t) => (
-            <TransactionRow key={t.id} t={t} onUpdate={updateTransaction} onDelete={removeTransaction} />
+            <TransactionRow
+              key={t.id}
+              t={t}
+              selected={selectedIds.includes(t.id)}
+              onSelect={toggleSelectOne}
+              onUpdate={updateTransaction}
+              onDelete={removeTransaction}
+            />
           ))}
         </div>
       </div>
@@ -349,7 +460,7 @@ export default function Finance() {
   );
 }
 
-function TransactionRow({ t, onUpdate, onDelete }) {
+function TransactionRow({ t, selected, onSelect, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -371,8 +482,14 @@ function TransactionRow({ t, onUpdate, onDelete }) {
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 8, background: "var(--bg-elevated)", gap: 10, flexWrap: "wrap" }}>
-      <div style={{ minWidth: 0, flex: "1 1 160px" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", borderRadius: 8, background: selected ? "var(--accent-soft)" : "var(--bg-elevated)", gap: 10, flexWrap: "wrap", border: selected ? "1px solid var(--accent)" : "1px solid transparent" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: "1 1 160px" }}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onSelect(t.id)}
+          style={{ cursor: "pointer", width: 16, height: 16, flexShrink: 0 }}
+        />
         <div style={{ fontSize: 13, wordBreak: "break-word" }}>
           {t.merchant || CATEGORY_LABELS[t.category] || t.category}
           <span style={{ color: "var(--text-muted)" }}> · {formatNice(t.date)} · {CATEGORY_LABELS[t.category] || t.category}</span>

@@ -54,6 +54,51 @@ router.get("/transactions", asyncHandler(async (req, res) => {
   res.json({ transactions: result.rows });
 }));
 
+router.put("/transactions/bulk", asyncHandler(async (req, res) => {
+  const { ids, category, type } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "ids array is required" });
+  }
+  if (category && !isValidCategory(category)) {
+    return res.status(400).json({ error: "invalid category" });
+  }
+  const pool = getPool();
+  const updates = [];
+  const params = [req.userId, ids];
+
+  if (category) {
+    params.push(category);
+    updates.push(`category = $${params.length}`);
+  }
+  if (type && ["expense", "income"].includes(type)) {
+    params.push(type);
+    updates.push(`type = $${params.length}`);
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: "No update fields provided" });
+  }
+
+  await pool.query(
+    `UPDATE transactions SET ${updates.join(", ")} WHERE user_id = $1 AND id = ANY($2::uuid[])`,
+    params
+  );
+  res.json({ success: true, updatedCount: ids.length });
+}));
+
+router.delete("/transactions/bulk", asyncHandler(async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "ids array is required" });
+  }
+  const pool = getPool();
+  await pool.query(
+    "DELETE FROM transactions WHERE user_id = $1 AND id = ANY($2::uuid[])",
+    [req.userId, ids]
+  );
+  res.json({ success: true, deletedCount: ids.length });
+}));
+
 router.put("/transactions/:id", asyncHandler(async (req, res) => {
   const { date, amount, type, category, merchant, notes } = req.body;
   if (type !== undefined && !["expense", "income"].includes(type)) {
