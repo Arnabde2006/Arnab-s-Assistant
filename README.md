@@ -2,21 +2,22 @@
 
 A minimalist, dark-first (with live light theme) web app for college life:
 day-wise attendance tracking (present/absent/half-day) with safe-to-miss
-calculations, a note-based to-do list that auto-arranges itself onto a
-calendar, a weekly timetable, exam-timetable upload (AI-read and
+calculations and interactive bunk simulator, a note-based to-do list that auto-arranges
+itself onto a calendar, a weekly timetable, exam-timetable upload (AI-read and
 auto-added to your calendar), an AI chat assistant, semester grade-card
-upload with automatic SGPA/CGPA calculation, and a Pomodoro focus timer.
+upload with automatic SGPA/CGPA calculation and trend visualizer, an income/expense
+tracker with AI statement reading and bulk category editing, and a Pomodoro focus timer.
 
 ## Stack
-- **Frontend:** React (Vite), React Router — no external UI framework, all custom CSS
+- **Frontend:** React (Vite), React Router, Lucide Icons — no external UI framework, all custom CSS
 - **Backend:** Node.js + Express, plain SQL via `pg`, JWT auth
 - **Database:** Neon (serverless Postgres, free tier)
-- **AI:** Google Gemini API (chat assistant, exam-timetable OCR, grade-card OCR)
+- **AI:** Google Gemini API (chat assistant, exam-timetable OCR, grade-card OCR, statement PDF & UPI screenshot parsing)
 
 ## Project structure
 ```
 college-app/
-  backend/    Express API (auth, subjects, attendance, todos, timetable, exams, grades, AI, dashboard)
+  backend/    Express API (auth, subjects, attendance, todos, timetable, exams, grades, finance, AI, dashboard)
   frontend/   React app (Vite)
 ```
 
@@ -63,7 +64,7 @@ App runs on `http://localhost:5173`. Register an account and try it out.
 3. On the project dashboard, click **Connect** and copy the connection string. It looks like:
    `postgresql://<user>:<password>@<endpoint>.neon.tech/neondb?sslmode=require`
 4. Paste that into `backend/.env` as `DATABASE_URL`.
-5. From the `backend` folder, run `npm run migrate` — this applies `schema.sql` and creates all the tables (`users`, `subjects`, `day_attendance`, `todos`, `timetable_slots`, `exams`, `grade_entries`). Safe to re-run.
+5. From the `backend` folder, run `npm run migrate` — this applies `schema.sql` and creates all the tables (`users`, `subjects`, `day_attendance`, `todos`, `timetable_slots`, `exams`, `grade_entries`, `transactions`). Safe to re-run.
 
 You can inspect your data anytime in the **Tables** tab of the Neon console.
 
@@ -71,7 +72,7 @@ You can inspect your data anytime in the **Tables** tab of the Neon console.
 
 ## 3. Get a free Gemini API key
 
-This powers the AI chat assistant, exam-timetable reading, and grade-card reading.
+This powers the AI chat assistant, exam-timetable reading, grade-card reading, and bank statement / UPI screenshot transaction extraction.
 
 1. Go to https://aistudio.google.com/apikey and sign in with a Google account.
 2. Click **Create API key** (free tier, rate-limited — fine for personal use).
@@ -109,28 +110,29 @@ You now have a live, free, full-stack app you can open from your phone or laptop
 ---
 
 ## Features included
-- **Auth** — register/login with JWT, password hashing
-- **Attendance (day-wise)** — mark each whole day present, absent, half-day, or **no college** (holiday); the percentage is calculated only over actual college days — holidays are structurally excluded, not just hidden; live percentage ring; "days needed" / "safe to miss" calculator against your attendance goal (default 75%, editable via the API)
-- **College holidays** — mark a date as "no college" manually, or upload a photo/PDF of your college's holiday list and every date on it gets marked automatically; holiday days show as a small, unobtrusive "Off" tag on the calendar (not a full row) with a toggle to hide that tag entirely if you want a cleaner view
-- **To-do → Calendar** — type a note like *"submit assignment fri"* or *"lab report tomorrow"* and it's automatically placed on the right day in a planner view; explicit dates (`2026-08-12`, `25/07`) also work; the calendar window auto-extends to show far-out items like exams
-- **Exam timetable upload** — upload a photo or PDF of your exam schedule, optionally list which courses you're taking; Gemini reads it and auto-adds each exam to your calendar and a dedicated exam list
-- **Grades** — upload a semester grade card (photo or PDF); Gemini extracts course/credits/grade, and the app computes SGPA per semester and overall CGPA
-- **AI chat assistant** — on the dashboard, ask questions about your attendance, tasks, exams, or anything else; it has context on your current data
-- **Timetable** — weekly class schedule linked to your subjects
-- **Focus timer** — Pomodoro (25/5/15) with a progress ring
-- **Dashboard** — task streak, attendance streak, today's pending items, upcoming exams, attendance ring, and the chat assistant
-- **View-only link** — from the dashboard, copy a private bookmarkable link (`/view/<token>`) that shows attendance and calendar with zero editing controls and no login required — handy for checking your own data quickly on any device. Regenerate it anytime to invalidate the old one.
-- **Mobile-first UX** — below 720px width, the sidebar is replaced by a native-feeling bottom tab bar (Home, Attendance, Calendar, Classes, More), with a slide-up sheet for the less-frequent pages plus the theme toggle and logout. Tap targets are sized for touch, inputs are 16px on mobile to avoid iOS's auto-zoom-on-focus, the timetable collapses from 7 columns to a stacked list, and long text (course names, exam titles) wraps instead of overflowing.
-- **Live theme switch** — Ink (dark) and Parchment (light), persisted locally
+- **Auth & Profile** — register/login with JWT, password hashing, profile management, monthly budget configuration.
+- **Finance Tracker** — track income and expenses, month-by-month navigation picker (`ThemeMonthPicker`), monthly budget progress bar, spending breakdown by category (`Family`, `Food`, `Hostel/Rent`, `Travel`, `Subscriptions`, `Shopping`, `Education`, `Entertainment`, `Other`), optional bulk selection & bulk category editing, automatic duplicate transaction prevention on statement re-uploads.
+- **AI Statement & UPI Upload** — upload bank statement PDFs or Google Pay / PhonePe / Paytm screenshots; Gemini reads and auto-categorizes all transactions.
+- **Attendance & Bunk Simulator** — mark each whole day present, absent, half-day, or **no college** (holiday); safe-to-miss calculations against your attendance goal (default 75%, editable in settings); interactive bunk simulator to test future attendance scenarios.
+- **College holidays** — mark a date as "no college" manually, or upload a photo/PDF of your college's holiday list; holiday dates show as an "Off" tag with a clean toggle.
+- **To-do → Calendar** — type notes like *"submit assignment fri"* or *"lab report tomorrow"* to automatically place items on the planner calendar.
+- **Exam timetable upload** — upload a photo or PDF of your exam schedule; Gemini reads it and auto-adds each exam to your calendar.
+- **Grades & Trend Visualizer** — upload semester grade cards (photo or PDF); Gemini extracts course/credits/grade, computes SGPA per semester and overall CGPA with visual trend charts.
+- **AI chat assistant** — ask questions about your attendance, tasks, exams, finance summary, or grades with real-time context injection.
+- **Timetable** — weekly class schedule linked to your subjects.
+- **Focus timer** — Pomodoro (25/5/15) with a progress ring.
+- **Dashboard** — task streak, attendance streak, today's pending items, upcoming exams, finance preview, attendance ring, and AI assistant.
+- **View-only link** — shareable read-only dashboard link (`/view/<token>`) to view attendance and calendar on any device without logging in.
+- **Mobile-first UX** — native bottom tab bar below 720px, touch-optimized Lucide icon controls for compact mobile row actions, responsive layouts.
+- **Live theme switch** — Ink (dark) and Parchment (light) themes with theme-matching custom controls.
 
 ## Notes on the AI features
-- Gemini can occasionally misread a messy scan — always double-check auto-added exam dates and grades before relying on them.
-- File uploads (exam timetables, grade cards) are capped around 15MB by the server; a clear phone photo or PDF is plenty.
-- The `GEMINI_MODEL` env var defaults to `gemini-2.5-flash`; change it in `.env` if you want a different Gemini model.
+- Gemini can occasionally misread a messy scan — always double-check auto-added exam dates, grades, or statement entries before relying on them.
+- File uploads are capped around 15MB by the server; a clear phone photo or PDF is plenty.
+- The `GEMINI_MODEL` env var defaults to `gemini-2.5-flash`.
 
 ## Ideas for what to add next
 - Push/email reminders for tasks due today
 - Recurring tasks (weekly lab reports, etc.)
 - Export/import your data as JSON
 - Make it an installable PWA for offline use
-- Expense/budget tracker for hostel spending
