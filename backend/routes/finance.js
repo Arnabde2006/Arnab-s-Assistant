@@ -99,10 +99,13 @@ router.post("/upload", asyncHandler(async (req, res) => {
     return res.status(400).json({ error: "fileBase64 and mimeType are required" });
   }
 
-  const systemInstruction = `You extract transactions from either (a) a bank account statement (a table of dated rows with a description and a debit or credit amount), or (b) a single UPI payment screenshot (e.g. Google Pay / PhonePe / Paytm success screen showing an amount and a "Paid to" or "Received from" name).
-Return ONLY a JSON array, no prose, in this exact shape:
-[{"date": "YYYY-MM-DD", "amount": number (always positive), "type": "expense" or "income", "merchant": "string — who was paid, or who paid you", "category": "one of: food, hostel, travel, subscriptions, shopping, education, entertainment, other"}]
-Rules: for a bank statement, a debit/withdrawal is "expense" and a credit/deposit is "income". For a UPI screenshot, "Paid to X" is "expense" and "Received from X" is "income". Infer category from the merchant name where possible (e.g. Zomato/Swiggy/Domino's -> food, Uber/Ola/IRCTC -> travel, Netflix/Spotify/Prime -> subscriptions, Amazon/Myntra -> shopping) - use "other" if you can't tell. If the year isn't shown, assume the current year. Skip opening/closing balance rows and headers - only real transactions. If you can't find any transactions, return [].`;
+  const systemInstruction = `You extract transactions and optional closing/current account balance from either (a) a bank account statement (a table of dated rows with a description and a debit or credit amount), or (b) a single UPI payment screenshot (e.g. Google Pay / PhonePe / Paytm success screen showing an amount and a "Paid to" or "Received from" name).
+Return ONLY a JSON object, no prose, in this exact shape:
+{
+  "transactions": [{"date": "YYYY-MM-DD", "amount": number (always positive), "type": "expense" or "income", "merchant": "string — who was paid, or who paid you", "category": "one of: food, hostel, travel, subscriptions, shopping, education, entertainment, other"}],
+  "closingBalance": number or null (if an available or closing bank account balance is explicitly shown on the document/screen, extract it as a positive number; otherwise null)
+}
+Rules: for a bank statement, a debit/withdrawal is "expense" and a credit/deposit is "income". For a UPI screenshot, "Paid to X" is "expense" and "Received from X" is "income". Infer category from the merchant name where possible (e.g. Zomato/Swiggy/Domino's -> food, Uber/Ola/IRCTC -> travel, Netflix/Spotify/Prime -> subscriptions, Amazon/Myntra -> shopping) - use "other" if you can't tell. If the year isn't shown, assume the current year. If you can't find any transactions, return {"transactions": [], "closingBalance": null}.`;
 
   const text = await callGemini({
     systemInstruction,
@@ -110,35 +113,75 @@ Rules: for a bank statement, a debit/withdrawal is "expense" and a credit/deposi
     jsonMode: true,
   });
 
-  let entries;
+  let parsed;
   try {
-    entries = safeParseJSON(text);
+    parsed = safeParseJSON(text);
   } catch {
     return res.status(502).json({ error: "Couldn't read that file clearly. Try a clearer photo or PDF. Nothing was changed." });
   }
-  if (!Array.isArray(entries)) entries = [];
+
+  const entries = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.transactions) ? parsed.transactions : [];
+  const closingBalance = typeof parsed?.closingBalance === "number" ? parsed.closingBalance : null;
 
   const validEntries = entries.filter(
     (e) => e.date && e.amount && ["expense", "income"].includes(e.type)
   );
 
-  if (validEntries.length === 0) {
+  if (validEntries.length === 0 && closingBalance === null) {
     return res.status(502).json({ error: "Couldn't find any valid transactions in that file. Try a clearer photo or PDF." });
   }
 
   const pool = getPool();
   const inserted = [];
+  let skippedCount = 0;
+
   for (const e of validEntries) {
     const cat = isValidCategory(e.category) ? e.category : "other";
+    const merchantStr = (e.merchant || "").trim();
+
+    const existing = await pool.query(
+      `SELECT id FROM transactions 
+       WHERE user_id = $1 AND date = $2 AND amount = $3 AND type = $4 AND LOWER(merchant) = LOWER($5)`,
+      [req.userId, e.date, e.amount, e.type, merchantStr]
+    );
+
+    if (existing.rows.length > 0) {
+      skippedCount++;
+      continue;
+    }
+
     const result = await pool.query(
       `INSERT INTO transactions (user_id, date, amount, type, category, merchant, source)
        VALUES ($1, $2, $3, $4, $5, $6, 'upload') RETURNING *`,
-      [req.userId, e.date, e.amount, e.type, cat, e.merchant || ""]
+      [req.userId, e.date, e.amount, e.type, cat, merchantStr]
     );
     inserted.push(result.rows[0]);
   }
 
-  res.json({ transactions: inserted, count: inserted.length });
+  if (closingBalance !== null) {
+    const overallRes = await pool.query(
+      "SELECT type, SUM(amount) as total FROM transactions WHERE user_id = $1 GROUP BY type",
+      [req.userId]
+    );
+    let totalIncome = 0;
+    let totalExpense = 0;
+    for (const r of overallRes.rows) {
+      if (r.type === "income") totalIncome += Number(r.total);
+      if (r.type === "expense") totalExpense += Number(r.total);
+    }
+    const targetInitial = closingBalance - (totalIncome - totalExpense);
+    await pool.query(
+      "UPDATE users SET initial_balance = $1 WHERE id = $2",
+      [Math.round(targetInitial * 100) / 100, req.userId]
+    );
+  }
+
+  res.json({
+    transactions: inserted,
+    count: inserted.length,
+    skippedCount,
+    closingBalance,
+  });
 }));
 
 export default router;
