@@ -355,9 +355,9 @@ button {
   -webkit-appearance: none;
   width: 18px;
   height: 18px;
-  border: 1.5px solid var(--border-strong);
+  border: 1.5px solid var(--text-muted);
   border-radius: 5px;
-  background: var(--bg-elevated);
+  background: var(--panel);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -366,6 +366,7 @@ button {
   position: relative;
   flex-shrink: 0;
   outline: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .custom-checkbox:hover {
