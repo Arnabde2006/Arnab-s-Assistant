@@ -21,13 +21,34 @@ function rupees(n) {
 
 function formatNice(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const now = new Date();
+  const showYear = d.getFullYear() !== now.getFullYear();
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", ...(showYear ? { year: "numeric" } : {}) });
+}
+
+function formatMonthName(monthStr) {
+  if (!monthStr) return "";
+  const [y, m] = monthStr.split("-");
+  const date = new Date(Number(y), Number(m) - 1, 1);
+  return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function shiftMonth(monthStr, delta) {
+  const [y, m] = monthStr.split("-");
+  const date = new Date(Number(y), Number(m) - 1 + delta, 1);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
 }
 
 export default function Finance() {
   const { user, setUser } = useAuth();
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [txFilter, setTxFilter] = useState("all"); // "all" or "month"
+
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
 
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: "", type: "expense", category: "food", merchant: "", notes: "" });
 
@@ -43,32 +64,35 @@ export default function Finance() {
   const [initialBalanceInput, setInitialBalanceInput] = useState(user?.initialBalance ?? 0);
   const [initialBalanceSaving, setInitialBalanceSaving] = useState(false);
 
-  async function refresh() {
-    const [sum, tx] = await Promise.all([api.get("/finance/summary"), api.get("/finance/transactions")]);
+  async function refresh(m = selectedMonth) {
+    const [sum, tx] = await Promise.all([
+      api.get(`/finance/summary?month=${m}`),
+      api.get("/finance/transactions"),
+    ]);
     setSummary(sum);
     setTransactions(tx.transactions);
   }
 
   useEffect(() => {
-    refresh().catch(() => {});
-  }, []);
+    refresh(selectedMonth).catch(() => {});
+  }, [selectedMonth]);
 
   async function addTransaction(e) {
     e.preventDefault();
     if (!form.amount || Number(form.amount) <= 0) return;
     await api.post("/finance/transactions", { ...form, amount: Number(form.amount) });
     setForm((f) => ({ ...f, amount: "", merchant: "", notes: "" }));
-    refresh();
+    refresh(selectedMonth);
   }
 
   async function updateTransaction(id, patch) {
     await api.put(`/finance/transactions/${id}`, patch);
-    refresh();
+    refresh(selectedMonth);
   }
 
   async function removeTransaction(id) {
     await api.del(`/finance/transactions/${id}`);
-    refresh();
+    refresh(selectedMonth);
   }
 
   async function uploadStatement(e) {
@@ -85,7 +109,7 @@ export default function Finance() {
       const result = await api.post("/finance/upload", { fileBase64, mimeType: file.type });
       setUploadResult(result);
       setFile(null);
-      refresh();
+      refresh(selectedMonth);
     } catch (err) {
       setUploadError(err.message);
     } finally {
@@ -100,7 +124,7 @@ export default function Finance() {
       const value = budgetInput === "" ? null : Number(budgetInput);
       const data = await api.put("/auth/me", { monthlyBudget: value });
       setUser(data.user);
-      refresh();
+      refresh(selectedMonth);
     } finally {
       setBudgetSaving(false);
     }
@@ -114,20 +138,62 @@ export default function Finance() {
       const data = await api.put("/auth/me", { initialBalance: value });
       setUser(data.user);
       setEditingInitialBalance(false);
-      refresh();
+      refresh(selectedMonth);
     } finally {
       setInitialBalanceSaving(false);
     }
   }
 
   const maxCategory = summary?.categories?.[0]?.amount || 1;
+  const filteredTransactions = txFilter === "month"
+    ? transactions.filter((t) => t.date && t.date.startsWith(selectedMonth))
+    : transactions;
+
+  const isCurrentMonth = selectedMonth === currentMonthStr;
 
   return (
     <div>
-      <div className="page-header">
+      <div className="page-header" style={{ flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 className="page-title">Finance</h1>
-          <p className="page-subtitle">Track spending, upload statements, and see where your money goes this month.</p>
+          <p className="page-subtitle">Track spending, upload statements, and see where your money goes.</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="btn-ghost btn"
+            style={{ padding: "6px 12px", fontSize: 13 }}
+            onClick={() => setSelectedMonth((m) => shiftMonth(m, -1))}
+            title="Previous month"
+          >
+            ‹ Prev
+          </button>
+          <input
+            className="input"
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+            style={{ width: "auto", fontSize: 13, padding: "5px 10px", fontWeight: 600 }}
+          />
+          <button
+            type="button"
+            className="btn-ghost btn"
+            style={{ padding: "6px 12px", fontSize: 13 }}
+            onClick={() => setSelectedMonth((m) => shiftMonth(m, 1))}
+            title="Next month"
+          >
+            Next ›
+          </button>
+          {!isCurrentMonth && (
+            <button
+              type="button"
+              className="btn"
+              style={{ padding: "6px 12px", fontSize: 12 }}
+              onClick={() => setSelectedMonth(currentMonthStr)}
+            >
+              This month
+            </button>
+          )}
         </div>
       </div>
 
@@ -175,15 +241,15 @@ export default function Finance() {
         </div>
 
         <div className="card">
-          <div className="label">Spent this month</div>
+          <div className="label">{isCurrentMonth ? "Spent this month" : `Spent in ${formatMonthName(selectedMonth)}`}</div>
           <div className="stat-num">{summary ? rupees(summary.expense) : "—"}</div>
         </div>
         <div className="card">
-          <div className="label">Income this month</div>
+          <div className="label">{isCurrentMonth ? "Income this month" : `Income in ${formatMonthName(selectedMonth)}`}</div>
           <div className="stat-num">{summary ? rupees(summary.income) : "—"}</div>
         </div>
         <div className="card">
-          <div className="label">Net this month</div>
+          <div className="label">{isCurrentMonth ? "Net this month" : `Net in ${formatMonthName(selectedMonth)}`}</div>
           <div className="stat-num" style={{ color: summary && summary.net < 0 ? "var(--absent)" : "var(--text)" }}>
             {summary ? rupees(summary.net) : "—"}
           </div>
@@ -192,8 +258,12 @@ export default function Finance() {
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
         <div className="card">
-          <div className="label" style={{ marginBottom: 12 }}>Spending by category</div>
-          {(!summary || summary.categories.length === 0) && <div className="empty-state">No expenses logged this month yet.</div>}
+          <div className="label" style={{ marginBottom: 12 }}>
+            {isCurrentMonth ? "Spending by category" : `Spending in ${formatMonthName(selectedMonth)}`}
+          </div>
+          {(!summary || summary.categories.length === 0) && (
+            <div className="empty-state">No expenses logged for {formatMonthName(selectedMonth)} yet.</div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {summary?.categories.map((c) => (
               <div key={c.category}>
@@ -301,10 +371,36 @@ export default function Finance() {
       </div>
 
       <div className="card">
-        <div className="label" style={{ marginBottom: 12 }}>Recent transactions</div>
-        {transactions.length === 0 && <div className="empty-state">No transactions yet.</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          <div className="label" style={{ margin: 0 }}>
+            {txFilter === "month" ? `Transactions in ${formatMonthName(selectedMonth)}` : "All transactions"}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              type="button"
+              className={txFilter === "all" ? "btn" : "btn-ghost btn"}
+              style={{ fontSize: 11, padding: "4px 10px" }}
+              onClick={() => setTxFilter("all")}
+            >
+              All ({transactions.length})
+            </button>
+            <button
+              type="button"
+              className={txFilter === "month" ? "btn" : "btn-ghost btn"}
+              style={{ fontSize: 11, padding: "4px 10px" }}
+              onClick={() => setTxFilter("month")}
+            >
+              {formatMonthName(selectedMonth)} ({transactions.filter((t) => t.date && t.date.startsWith(selectedMonth)).length})
+            </button>
+          </div>
+        </div>
+        {filteredTransactions.length === 0 && (
+          <div className="empty-state">
+            {txFilter === "month" ? `No transactions recorded for ${formatMonthName(selectedMonth)}.` : "No transactions yet."}
+          </div>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {transactions.slice(0, 40).map((t) => (
+          {filteredTransactions.slice(0, 60).map((t) => (
             <TransactionRow key={t.id} t={t} onUpdate={updateTransaction} onDelete={removeTransaction} />
           ))}
         </div>
