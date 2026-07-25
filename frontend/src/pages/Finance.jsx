@@ -12,6 +12,7 @@ const CATEGORY_LABELS = {
   shopping: "Shopping",
   education: "Education",
   entertainment: "Entertainment",
+  family: "Family",
   other: "Other",
 };
 

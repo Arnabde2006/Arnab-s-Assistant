@@ -101,7 +101,7 @@ router.post("/upload", asyncHandler(async (req, res) => {
 
   const systemInstruction = `You extract transactions from either (a) a bank account statement (a table of dated rows with a description and a debit or credit amount), or (b) a single UPI payment screenshot (e.g. Google Pay / PhonePe / Paytm success screen showing an amount and a "Paid to" or "Received from" name).
 Return ONLY a JSON array, no prose, in this exact shape:
-[{"date": "YYYY-MM-DD", "amount": number (always positive), "type": "expense" or "income", "merchant": "string — who was paid, or who paid you", "category": "one of: food, hostel, travel, subscriptions, shopping, education, entertainment, other"}]
+[{"date": "YYYY-MM-DD", "amount": number (always positive), "type": "expense" or "income", "merchant": "string — who was paid, or who paid you", "category": "one of: food, hostel, travel, subscriptions, shopping, education, entertainment, family, other"}]
 Rules: for a bank statement, a debit/withdrawal is "expense" and a credit/deposit is "income". For a UPI screenshot, "Paid to X" is "expense" and "Received from X" is "income". Infer category from the merchant name where possible (e.g. Zomato/Swiggy/Domino's -> food, Uber/Ola/IRCTC -> travel, Netflix/Spotify/Prime -> subscriptions, Amazon/Myntra -> shopping) - use "other" if you can't tell. If the year isn't shown, assume the current year. Skip opening/closing balance rows and headers - only real transactions. If you can't find any transactions, return [].`;
 
   const text = await callGemini({
