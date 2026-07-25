@@ -721,6 +721,17 @@ select.input {
   margin-top: 8px;
 }
 
+@media (max-width: 640px) {
+  .tx-action-text {
+    display: none !important;
+  }
+  .tx-action-btn {
+    padding: 5px 6px !important;
+    min-width: 28px;
+    justify-content: center;
+  }
+}
+
 /* ---- Mobile bottom navigation (hidden on desktop) ---- */
 
 .mobile-nav {

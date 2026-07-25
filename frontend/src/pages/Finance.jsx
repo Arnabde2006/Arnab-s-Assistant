@@ -3,6 +3,7 @@ import { api } from "../api/client.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import FileUpload from "../components/FileUpload.jsx";
+import { Pencil, Trash2 } from "lucide-react";
 
 const CATEGORY_LABELS = {
   food: "Food",
@@ -724,8 +725,26 @@ function TransactionRow({ t, selectionMode, selected, onSelect, onUpdate, onDele
         <span style={{ fontWeight: 600, color: t.type === "income" ? "var(--present)" : "var(--absent)" }}>
           {t.type === "income" ? "+" : "−"}{rupees(t.amount)}
         </span>
-        <button onClick={() => setEditing(true)} className="btn-ghost btn" style={{ fontSize: 11, padding: "5px 8px" }}>Edit</button>
-        <button onClick={() => onDelete(t.id)} className="btn-ghost btn" style={{ fontSize: 11, padding: "5px 8px" }}>Delete</button>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="btn-ghost btn tx-action-btn"
+          style={{ fontSize: 11, padding: "5px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}
+          title="Edit transaction"
+        >
+          <Pencil size={13} />
+          <span className="tx-action-text">Edit</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onDelete(t.id)}
+          className="btn-ghost btn tx-action-btn"
+          style={{ fontSize: 11, padding: "5px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}
+          title="Delete transaction"
+        >
+          <Trash2 size={13} />
+          <span className="tx-action-text">Delete</span>
+        </button>
       </div>
     </div>
   );
