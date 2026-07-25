@@ -14,16 +14,12 @@ export async function computeFinanceSummary(userId, monthStr) {
   const to = toDate.toISOString().slice(0, 10);
 
   const pool = getPool();
-  const [txResult, userResult, overallResult] = await Promise.all([
+  const [txResult, userResult] = await Promise.all([
     pool.query(
       "SELECT * FROM transactions WHERE user_id = $1 AND date >= $2 AND date < $3 ORDER BY date DESC, created_at DESC",
       [userId, from, to]
     ),
-    pool.query("SELECT monthly_budget, initial_balance FROM users WHERE id = $1", [userId]),
-    pool.query(
-      "SELECT type, SUM(amount) as total FROM transactions WHERE user_id = $1 GROUP BY type",
-      [userId]
-    ),
+    pool.query("SELECT monthly_budget FROM users WHERE id = $1", [userId]),
   ]);
 
   const rows = txResult.rows;
@@ -41,22 +37,9 @@ export async function computeFinanceSummary(userId, monthStr) {
 
   const userRow = userResult.rows[0];
   const monthlyBudget = userRow?.monthly_budget ? Number(userRow.monthly_budget) : null;
-  const initialBalance = userRow?.initial_balance !== null && userRow?.initial_balance !== undefined ? Number(userRow.initial_balance) : 0;
-
-  let totalIncome = 0;
-  let totalExpense = 0;
-  for (const r of overallResult.rows) {
-    if (r.type === "income") totalIncome += Number(r.total);
-    if (r.type === "expense") totalExpense += Number(r.total);
-  }
-  const currentBalance = Math.round((initialBalance + totalIncome - totalExpense) * 100) / 100;
 
   return {
     month,
-    currentBalance,
-    initialBalance,
-    totalIncome: Math.round(totalIncome * 100) / 100,
-    totalExpense: Math.round(totalExpense * 100) / 100,
     income: Math.round(income * 100) / 100,
     expense: Math.round(expense * 100) / 100,
     net: Math.round((income - expense) * 100) / 100,
