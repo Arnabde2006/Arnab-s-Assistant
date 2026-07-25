@@ -5,6 +5,8 @@ import { callGemini } from "../gemini.js";
 import { toISO, safeParseJSON } from "../utils/dateHelpers.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
+import { computeFinanceSummary } from "../lib/financeSummary.js";
+
 const router = express.Router();
 router.use(requireAuth);
 
@@ -18,11 +20,12 @@ router.post("/chat", async (req, res) => {
     const pool = getPool();
     const today = toISO(new Date());
 
-    const [attendanceRes, todosRes, examsRes, gradesSummary] = await Promise.all([
+    const [attendanceRes, todosRes, examsRes, gradesSummary, financeSummary] = await Promise.all([
       pool.query("SELECT status FROM day_attendance WHERE user_id = $1", [req.userId]),
       pool.query("SELECT text, date, done FROM todos WHERE user_id = $1 AND date >= $2 ORDER BY date ASC LIMIT 20", [req.userId, today]),
       pool.query("SELECT course, exam_date FROM exams WHERE user_id = $1 AND exam_date >= $2 ORDER BY exam_date ASC LIMIT 10", [req.userId, today]),
       computeGrades(req.userId),
+      computeFinanceSummary(req.userId).catch(() => null),
     ]);
 
     const records = attendanceRes.rows;
@@ -45,9 +48,12 @@ router.post("/chat", async (req, res) => {
       gradesSummary.semesters.length
         ? `Grade history: CGPA is ${gradesSummary.cgpa} (${gradesSummary.totalCredits} total credits). Semester breakdown: ${gradesSummary.semesters.map((s) => `Semester ${s.semester} (SGPA ${s.sgpa}): ${s.courses.map((c) => `${c.course} (${c.grade})`).join(", ")}`).join("; ")}.`
         : "No grades have been added to the grade tracker yet.",
+      financeSummary
+        ? `Finance summary: Current account balance is ₹${financeSummary.currentBalance}. Spent ₹${financeSummary.expense} this month, income ₹${financeSummary.income} this month.`
+        : "No finance data logged.",
     ].join(" ");
 
-    const systemInstruction = `You are the built-in assistant for "Arnab's Assistant", a personal college companion app (attendance tracker, to-do/calendar, timetable, exam schedule, focus timer, grade tracker). Answer the student's question helpfully and concisely, using the context below when relevant. If asked something outside the app's scope, still answer normally as a helpful general assistant. Keep answers short and conversational, plain text, no markdown headers.
+    const systemInstruction = `You are the built-in assistant for "Arnab's Assistant", a personal college companion app (attendance tracker, to-do/calendar, timetable, exam schedule, focus timer, grade tracker, finance tracker). Answer the student's question helpfully and concisely, using the context below when relevant. If asked something outside the app's scope, still answer normally as a helpful general assistant. Keep answers short and conversational, plain text, no markdown headers.
 
 Context: ${contextLines}`;
 
