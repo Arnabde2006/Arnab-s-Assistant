@@ -368,12 +368,12 @@ export default function Finance() {
               <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", color: "var(--text-muted)", userSelect: "none" }}>
                 <input
                   type="checkbox"
+                  className="custom-checkbox"
                   checked={
                     filteredTransactions.length > 0 &&
                     filteredTransactions.slice(0, 60).every((t) => selectedIds.includes(t.id))
                   }
                   onChange={toggleSelectAll}
-                  style={{ cursor: "pointer", accentColor: "var(--accent)" }}
                 />
                 Select All
               </label>
@@ -562,9 +562,9 @@ function TransactionRow({ t, selectionMode, selected, onSelect, onUpdate, onDele
         {selectionMode && (
           <input
             type="checkbox"
+            className="custom-checkbox"
             checked={selected}
             onChange={() => onSelect(t.id)}
-            style={{ cursor: "pointer", width: 16, height: 16, flexShrink: 0, accentColor: "var(--accent)" }}
           />
         )}
         <div style={{ fontSize: 13, wordBreak: "break-word" }}>
