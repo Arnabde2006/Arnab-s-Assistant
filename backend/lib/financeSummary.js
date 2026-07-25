@@ -1,6 +1,6 @@
 import { getPool } from "../db.js";
 
-const CATEGORIES = ["food", "hostel", "travel", "subscriptions", "shopping", "education", "entertainment", "other"];
+const CATEGORIES = ["food", "hostel", "travel", "subscriptions", "shopping", "education", "entertainment", "family", "other"];
 
 export function isValidCategory(cat) {
   return CATEGORIES.includes(cat);
