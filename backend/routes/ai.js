@@ -49,7 +49,7 @@ router.post("/chat", async (req, res) => {
         ? `Grade history: CGPA is ${gradesSummary.cgpa} (${gradesSummary.totalCredits} total credits). Semester breakdown: ${gradesSummary.semesters.map((s) => `Semester ${s.semester} (SGPA ${s.sgpa}): ${s.courses.map((c) => `${c.course} (${c.grade})`).join(", ")}`).join("; ")}.`
         : "No grades have been added to the grade tracker yet.",
       financeSummary
-        ? `Finance summary: Current account balance is ₹${financeSummary.currentBalance}. Spent ₹${financeSummary.expense} this month, income ₹${financeSummary.income} this month.`
+        ? `Finance summary: Spent ₹${financeSummary.expense} this month, income ₹${financeSummary.income} this month.`
         : "No finance data logged.",
     ].join(" ");
 

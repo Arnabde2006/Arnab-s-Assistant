@@ -60,10 +60,6 @@ export default function Finance() {
   const [budgetInput, setBudgetInput] = useState(user?.monthlyBudget ?? "");
   const [budgetSaving, setBudgetSaving] = useState(false);
 
-  const [editingInitialBalance, setEditingInitialBalance] = useState(false);
-  const [initialBalanceInput, setInitialBalanceInput] = useState(user?.initialBalance ?? 0);
-  const [initialBalanceSaving, setInitialBalanceSaving] = useState(false);
-
   async function refresh(m = selectedMonth) {
     const [sum, tx] = await Promise.all([
       api.get(`/finance/summary?month=${m}`),
@@ -130,20 +126,6 @@ export default function Finance() {
     }
   }
 
-  async function saveInitialBalance(e) {
-    e.preventDefault();
-    setInitialBalanceSaving(true);
-    try {
-      const value = initialBalanceInput === "" ? 0 : Number(initialBalanceInput);
-      const data = await api.put("/auth/me", { initialBalance: value });
-      setUser(data.user);
-      setEditingInitialBalance(false);
-      refresh(selectedMonth);
-    } finally {
-      setInitialBalanceSaving(false);
-    }
-  }
-
   const maxCategory = summary?.categories?.[0]?.amount || 1;
   const filteredTransactions = txFilter === "month"
     ? transactions.filter((t) => t.date && t.date.startsWith(selectedMonth))
@@ -197,49 +179,7 @@ export default function Finance() {
         </div>
       </div>
 
-      <div className="grid grid-4" style={{ marginBottom: 20 }}>
-        <div className="card" style={{ position: "relative" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div className="label">Current balance</div>
-            <button
-              type="button"
-              className="btn-ghost btn"
-              style={{ fontSize: 11, padding: "2px 8px" }}
-              onClick={() => {
-                setInitialBalanceInput(summary?.initialBalance ?? 0);
-                setEditingInitialBalance(!editingInitialBalance);
-              }}
-            >
-              {editingInitialBalance ? "Cancel" : "Set starting"}
-            </button>
-          </div>
-          {editingInitialBalance ? (
-            <form onSubmit={saveInitialBalance} style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <input
-                className="input"
-                type="number"
-                step="0.01"
-                placeholder="Starting balance"
-                value={initialBalanceInput}
-                onChange={(e) => setInitialBalanceInput(e.target.value)}
-                style={{ fontSize: 13, padding: "4px 8px", minWidth: 0, flex: 1 }}
-              />
-              <button className="btn" type="submit" disabled={initialBalanceSaving} style={{ fontSize: 12, padding: "4px 12px" }}>
-                Save
-              </button>
-            </form>
-          ) : (
-            <>
-              <div className="stat-num" style={{ color: summary && summary.currentBalance < 0 ? "var(--absent)" : "var(--present)" }}>
-                {summary ? rupees(summary.currentBalance) : "—"}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                Starting: {summary ? rupees(summary.initialBalance) : "₹0"}
-              </div>
-            </>
-          )}
-        </div>
-
+      <div className="grid grid-3" style={{ marginBottom: 20 }}>
         <div className="card">
           <div className="label">{isCurrentMonth ? "Spent this month" : `Spent in ${formatMonthName(selectedMonth)}`}</div>
           <div className="stat-num">{summary ? rupees(summary.expense) : "—"}</div>
@@ -358,7 +298,6 @@ export default function Finance() {
             <div style={{ fontSize: 12, color: "var(--present)", marginBottom: 10 }}>
               {uploadResult.count > 0 ? `Added ${uploadResult.count} new transaction(s).` : "No new transactions to add."}
               {uploadResult.skippedCount > 0 && ` Skipped ${uploadResult.skippedCount} existing duplicate(s).`}
-              {uploadResult.closingBalance !== null && ` Account balance updated to ${rupees(uploadResult.closingBalance)}.`}
             </div>
           )}
           <div style={{ display: "flex", justifyContent: "center" }}>

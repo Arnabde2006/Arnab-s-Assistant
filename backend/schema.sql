@@ -89,7 +89,6 @@ CREATE TABLE IF NOT EXISTS college_holidays (
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_budget NUMERIC;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS initial_balance NUMERIC NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
