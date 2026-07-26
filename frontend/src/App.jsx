@@ -11,6 +11,8 @@ import ViewOnlyEntry from "./pages/ViewOnlyEntry.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Attendance from "./pages/Attendance.jsx";
 import Todos from "./pages/Todos.jsx";
+import Subscriptions from "./pages/Subscriptions.jsx";
+import Nptel from "./pages/Nptel.jsx";
 import Timetable from "./pages/Timetable.jsx";
 import ExamTimetable from "./pages/ExamTimetable.jsx";
 import Grades from "./pages/Grades.jsx";
@@ -47,6 +49,8 @@ export default function App() {
       "/": "Dashboard",
       "/attendance": "Attendance",
       "/todos": "To-do & Calendar",
+      "/subscriptions": "Subscriptions",
+      "/nptel": "NPTEL Courses",
       "/timetable": "Timetable",
       "/exams": "Exam Timetable",
       "/grades": "Grades",
@@ -77,6 +81,8 @@ export default function App() {
       <Route path="/" element={<ProtectedShell><Dashboard /></ProtectedShell>} />
       <Route path="/attendance" element={<ProtectedShell><Attendance /></ProtectedShell>} />
       <Route path="/todos" element={<ProtectedShell><Todos /></ProtectedShell>} />
+      <Route path="/subscriptions" element={<ProtectedShell><Subscriptions /></ProtectedShell>} />
+      <Route path="/nptel" element={<ProtectedShell><Nptel /></ProtectedShell>} />
       <Route path="/timetable" element={<ProtectedShell><Timetable /></ProtectedShell>} />
       <Route path="/exams" element={<ProtectedShell><ExamTimetable /></ProtectedShell>} />
       <Route path="/grades" element={<ProtectedShell><Grades /></ProtectedShell>} />

@@ -20,12 +20,14 @@ router.post("/chat", async (req, res) => {
     const pool = getPool();
     const today = toISO(new Date());
 
-    const [attendanceRes, todosRes, examsRes, gradesSummary, financeSummary] = await Promise.all([
+    const [attendanceRes, todosRes, examsRes, gradesSummary, financeSummary, subsRes, nptelRes] = await Promise.all([
       pool.query("SELECT status FROM day_attendance WHERE user_id = $1", [req.userId]),
       pool.query("SELECT text, date, done FROM todos WHERE user_id = $1 AND date >= $2 ORDER BY date ASC LIMIT 20", [req.userId, today]),
       pool.query("SELECT course, exam_date FROM exams WHERE user_id = $1 AND exam_date >= $2 ORDER BY exam_date ASC LIMIT 10", [req.userId, today]),
       computeGrades(req.userId),
       computeFinanceSummary(req.userId).catch(() => null),
+      pool.query("SELECT name, plan_type, amount, currency, renewal_date, (renewal_date - CURRENT_DATE) as days_left FROM subscriptions WHERE user_id = $1 AND status = 'active' ORDER BY renewal_date ASC", [req.userId]).catch(() => ({ rows: [] })),
+      pool.query(`SELECT a.title, a.due_date, a.submitted, c.course_name FROM nptel_assignments a JOIN nptel_courses c ON a.course_id = c.id WHERE a.user_id = $1 AND a.due_date >= $2 AND a.submitted = false ORDER BY a.due_date ASC LIMIT 10`, [req.userId, today]).catch(() => ({ rows: [] })),
     ]);
 
     const records = attendanceRes.rows;
@@ -33,6 +35,9 @@ router.post("/chat", async (req, res) => {
     const present = records.filter((r) => r.status === "present").length;
     const halfDay = records.filter((r) => r.status === "half_day").length;
     const pct = total ? Math.round(((present + halfDay * 0.5) / total) * 1000) / 10 : null;
+
+    const subsList = subsRes.rows || [];
+    const nptelList = nptelRes.rows || [];
 
     const contextLines = [
       `Today's date: ${today}.`,
@@ -42,6 +47,9 @@ router.post("/chat", async (req, res) => {
       todosRes.rows.length
         ? `Upcoming to-dos: ${todosRes.rows.map((t) => `"${t.text}" on ${t.date}${t.done ? " (done)" : ""}`).join("; ")}.`
         : "No upcoming to-dos.",
+      nptelList.length
+        ? `Pending NPTEL Assignments: ${nptelList.map((a) => `${a.course_name} (${a.title}) due ${a.due_date}`).join("; ")}.`
+        : "No pending NPTEL assignments.",
       examsRes.rows.length
         ? `Upcoming exams: ${examsRes.rows.map((e) => `${e.course} on ${e.exam_date}`).join("; ")}.`
         : "No upcoming exams recorded.",
@@ -51,9 +59,12 @@ router.post("/chat", async (req, res) => {
       financeSummary
         ? `Finance summary: Spent ₹${financeSummary.expense} this month, income ₹${financeSummary.income} this month.`
         : "No finance data logged.",
+      subsList.length
+        ? `Active Subscriptions & Free Trials: ${subsList.map((s) => `${s.name} (${s.plan_type === 'free_trial' ? 'Free Trial' : 'Paid'}, ${s.currency}${s.amount}, renewal ${s.renewal_date}, ${s.days_left} days left)`).join("; ")}.`
+        : "No active subscriptions tracked.",
     ].join(" ");
 
-    const systemInstruction = `You are the built-in assistant for "Arnab's Assistant", a personal college companion app (attendance tracker, to-do/calendar, timetable, exam schedule, focus timer, grade tracker, finance tracker). Answer the student's question helpfully and concisely, using the context below when relevant. If asked something outside the app's scope, still answer normally as a helpful general assistant. Keep answers short and conversational, plain text, no markdown headers.
+    const systemInstruction = `You are the built-in personal assistant for "Arnab's Assistant", a comprehensive personal & college companion app (attendance tracker, to-do & calendar, timetable, subscription & trial reminders, exam schedule, focus timer, grade tracker, finance tracker). Answer the student helpfully and concisely, using the context below when relevant. If asked something outside the app's scope, still answer normally as a helpful general assistant. Keep answers short and conversational, plain text, no markdown headers.
 
 Context: ${contextLines}`;
 

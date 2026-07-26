@@ -10,6 +10,7 @@ export default function Dashboard() {
   const [attendance, setAttendance] = useState(null);
   const [todayTodos, setTodayTodos] = useState([]);
   const [upcomingExams, setUpcomingExams] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
 
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -20,6 +21,7 @@ export default function Dashboard() {
       api.get("/attendance/summary").then(setAttendance).catch(() => {}),
       api.get(`/todos?from=${todayStr}&to=${todayStr}`).then((d) => setTodayTodos(d.todos || [])).catch(() => {}),
       api.get("/ai/exams").then((d) => setUpcomingExams(d.exams ? d.exams.filter((e) => e.exam_date >= todayStr).slice(0, 4) : [])).catch(() => {}),
+      api.get("/subscriptions").then((d) => setSubscriptions(d.subscriptions ? d.subscriptions.filter((s) => s.status === "active") : [])).catch(() => {}),
     ]).finally(() => {
       setPageLoading(false);
     });
@@ -142,6 +144,58 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Subscriptions & Trial Reminders Card */}
+      {subscriptions.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div className="label">Subscriptions &amp; Free Trials</div>
+            <a href="/subscriptions" style={{ fontSize: 12, color: "var(--primary-color)", fontWeight: 600, textDecoration: "none" }}>
+              Manage Subscriptions →
+            </a>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {subscriptions.map((s) => {
+              const daysLeft = Number(s.days_remaining);
+              const isTrial = s.plan_type === "free_trial";
+              const isUrgent = daysLeft <= 7;
+              return (
+                <div
+                  key={s.id}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    background: isUrgent ? "rgba(234, 179, 8, 0.12)" : "var(--bg-elevated)",
+                    border: isUrgent ? "1px solid var(--warning)" : "1px solid var(--border-color)",
+                    fontSize: 13,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{s.name}</span>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    ({isTrial ? "Trial" : "Paid"} · {s.currency}{s.amount})
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: isUrgent ? "var(--warning)" : "var(--primary-color)",
+                    }}
+                  >
+                    {daysLeft < 0
+                      ? "Passed"
+                      : daysLeft === 0
+                      ? "Charges Today!"
+                      : `${daysLeft}d left`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <ChatCard />
       <div style={{ height: 20 }} />
       <ViewOnlyLinkCard />
@@ -149,7 +203,7 @@ export default function Dashboard() {
   );
 }
 
-const INITIAL_MESSAGE = { role: "assistant", text: "Hi! Ask me anything about your classes, attendance, tasks, or exams." };
+const INITIAL_MESSAGE = { role: "assistant", text: "Hi! Ask me anything about your classes, attendance, tasks, free trials, or exams." };
 const HISTORY_KEY = "arnab-chat-history";
 
 function ChatCard() {

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import Switch from "../components/Switch.jsx";
+import { CreditCard, AlertTriangle } from "lucide-react";
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -18,6 +20,8 @@ export default function Todos() {
   const [priority, setPriority] = useState("normal");
   const [todos, setTodos] = useState([]);
   const [holidays, setHolidays] = useState([]);
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [nptelAssignments, setNptelAssignments] = useState([]);
   const [showHolidays, setShowHolidays] = useState(() => localStorage.getItem("showHolidays") !== "false");
   const [pageLoading, setPageLoading] = useState(true);
 
@@ -32,12 +36,16 @@ export default function Todos() {
 
   async function refresh() {
     try {
-      const [todosData, holidaysData] = await Promise.all([
+      const [todosData, holidaysData, subsData, nptelData] = await Promise.all([
         api.get(`/todos?from=${rangeStart}&to=${rangeEnd}`),
         api.get(`/holidays?from=${rangeStart}&to=${rangeEnd}`),
+        api.get("/subscriptions").catch(() => ({ subscriptions: [] })),
+        api.get("/nptel").catch(() => ({ allAssignments: [] })),
       ]);
       setTodos(todosData.todos);
       setHolidays(holidaysData.holidays);
+      setSubscriptions(subsData.subscriptions || []);
+      setNptelAssignments(nptelData.allAssignments || []);
     } finally {
       setPageLoading(false);
     }
@@ -99,13 +107,22 @@ export default function Todos() {
     refresh();
   }
 
-  // Build the visible day window: at least 14 days, extended further if a
-  // todo (e.g. an auto-added exam) falls beyond that — so exams always show.
-  const furthestDate = todos.reduce((max, t) => (t.date > max ? t.date : max), rangeStart);
+  // Active subscriptions mapping by date
+  const activeSubs = subscriptions.filter((s) => s.status === "active");
+
+  // Determine furthest date between todos & subscriptions
+  const furthestTodoDate = todos.reduce((max, t) => (t.date > max ? t.date : max), rangeStart);
+  const furthestSubDate = activeSubs.reduce((max, s) => {
+    const renewal = s.renewal_date ? s.renewal_date.split("T")[0] : "";
+    return renewal > max ? renewal : max;
+  }, rangeStart);
+
+  const maxDateStr = furthestTodoDate > furthestSubDate ? furthestTodoDate : furthestSubDate;
   const daysCount = Math.max(
     14,
-    Math.round((new Date(furthestDate) - new Date(rangeStart)) / 86400000) + 1
+    Math.round((new Date(maxDateStr) - new Date(rangeStart)) / 86400000) + 1
   );
+
   const days = [];
   for (let i = 0; i < daysCount; i++) {
     const d = new Date();
@@ -120,7 +137,7 @@ export default function Todos() {
       <div className="page-header">
         <div>
           <h1 className="page-title">To‑do &amp; Calendar</h1>
-          <p className="page-subtitle">Type a note — it lands on the right day automatically. Try "submit lab report fri".</p>
+          <p className="page-subtitle">Type a note — it lands on the right day automatically. Subscription &amp; trial reminders display automatically.</p>
         </div>
         <Switch checked={showHolidays} onChange={setShowHolidays} label="Show college‑off days" />
       </div>
@@ -147,6 +164,42 @@ export default function Todos() {
           const holiday = holidayMap.get(date);
           const isHoliday = showHolidays && !!holiday;
           const { weekday, num, month } = formatDay(date);
+
+          // Find active subscription events for this date
+          const subEvents = [];
+          for (const sub of activeSubs) {
+            if (!sub.renewal_date) continue;
+            const renDateStr = sub.renewal_date.split("T")[0];
+
+            // Trigger event on renewal_date itself
+            if (renDateStr === date) {
+              subEvents.push({
+                sub,
+                type: "renewal_day",
+                isTrial: sub.plan_type === "free_trial",
+              });
+            } else {
+              // Trigger reminder N days before
+              const renDateObj = new Date(renDateStr + "T00:00:00");
+              const remindDateObj = new Date(renDateObj);
+              remindDateObj.setDate(remindDateObj.getDate() - (sub.remind_days_before || 3));
+              const remindDateStr = toISO(remindDateObj);
+
+              if (remindDateStr === date) {
+                subEvents.push({
+                  sub,
+                  type: "reminder_day",
+                  isTrial: sub.plan_type === "free_trial",
+                });
+              }
+            }
+          }
+
+          // Find NPTEL assignment events for this date
+          const dayNptelAssignments = nptelAssignments.filter((a) => a.due_date && a.due_date.split("T")[0] === date);
+
+          const hasItems = dayTodos.length > 0 || subEvents.length > 0 || dayNptelAssignments.length > 0;
+
           return (
             <div className={"planner-row" + (isHoliday ? " is-holiday" : "")} key={date}>
               <div className="planner-date">
@@ -160,10 +213,84 @@ export default function Todos() {
                 )}
               </div>
               <div className="planner-items">
-                {dayTodos.length === 0 && <span style={{ color: "var(--text-muted)", fontSize: 13 }}>—</span>}
+                {!hasItems && <span style={{ color: "var(--text-muted)", fontSize: 13 }}>—</span>}
+
+                {/* NPTEL Assignment Cards */}
+                {dayNptelAssignments.map((a) => (
+                  <div
+                    key={a.id}
+                    className={"todo-item" + (a.submitted ? " done" : "")}
+                    style={{
+                      borderLeft: "3px solid #8b5cf6",
+                      background: a.submitted ? "rgba(139, 92, 246, 0.05)" : "rgba(139, 92, 246, 0.12)",
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="custom-checkbox"
+                      checked={a.submitted}
+                      onChange={async () => {
+                        await api.put(`/nptel/assignments/${a.id}`, { submitted: !a.submitted });
+                        refresh();
+                      }}
+                    />
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
+                      <strong style={{ color: "#8b5cf6" }}>📘 NPTEL:</strong> {a.course_name} — {a.title}
+                    </span>
+                    <Link
+                      to="/nptel"
+                      style={{ fontSize: 11, color: "#8b5cf6", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}
+                    >
+                      Tracker →
+                    </Link>
+                  </div>
+                ))}
+
+                {/* Subscription Reminder Cards */}
+                {subEvents.map((evt) => (
+                  <div
+                    key={`${evt.sub.id}-${evt.type}`}
+                    className="todo-item"
+                    style={{
+                      borderLeft: evt.isTrial ? "3px solid var(--warning)" : "3px solid #3b82f6",
+                      background: evt.isTrial ? "rgba(234, 179, 8, 0.08)" : "rgba(59, 130, 246, 0.08)",
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <CreditCard size={16} style={{ color: evt.isTrial ? "var(--warning)" : "#3b82f6", flexShrink: 0 }} />
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>
+                      {evt.type === "renewal_day" ? (
+                        <>
+                          <strong style={{ color: evt.isTrial ? "var(--warning)" : "var(--text)" }}>
+                            {evt.isTrial ? "🚨 Free Trial Ends Today!" : "💳 Subscription Renews Today:"}
+                          </strong>{" "}
+                          {evt.sub.name} ({evt.sub.currency}{evt.sub.amount}/{evt.sub.billing_cycle})
+                        </>
+                      ) : (
+                        <>
+                          <strong>⚠️ Subscription Alert:</strong> {evt.sub.name}{" "}
+                          {evt.isTrial ? "trial ends" : "renews"} in {evt.sub.remind_days_before} days ({evt.sub.currency}{evt.sub.amount})
+                        </>
+                      )}
+                    </span>
+                    <Link
+                      to="/subscriptions"
+                      style={{ fontSize: 11, color: "var(--primary-color)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}
+                    >
+                      View / Cancel →
+                    </Link>
+                  </div>
+                ))}
+
+                {/* Todos */}
                 {dayTodos.map((t) => (
                   <div key={t.id} className={"todo-item" + (t.done ? " done" : "")}>
-                    <input type="checkbox" checked={t.done} onChange={() => toggleDone(t)} style={{ width: 18, height: 18, flexShrink: 0 }} />
+                    <input type="checkbox" className="custom-checkbox" checked={t.done} onChange={() => toggleDone(t)} />
                     <span className={`priority-dot priority-${t.priority}`} />
                     <span style={{ flex: 1 }}>{t.text}</span>
                     <button
@@ -183,3 +310,4 @@ export default function Todos() {
     </div>
   );
 }
+
