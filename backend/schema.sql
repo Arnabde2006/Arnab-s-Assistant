@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS todos (
   date DATE NOT NULL,
   priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'urgent')),
   done BOOLEAN NOT NULL DEFAULT false,
-  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'exam')),
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'exam', 'ai')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
