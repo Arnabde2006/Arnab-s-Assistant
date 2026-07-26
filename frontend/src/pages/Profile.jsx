@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { api } from "../api/client.js";
 import Switch from "../components/Switch.jsx";
 import ViewOnlyLinkCard from "../components/ViewOnlyLinkCard.jsx";
+import { Smartphone, Check } from "lucide-react";
 
 export default function Profile() {
   const { user, setUser } = useAuth();
@@ -12,6 +13,15 @@ export default function Profile() {
   const [attendanceGoal, setAttendanceGoal] = useState(user?.attendanceGoal || 75);
   const [budgetEnabled, setBudgetEnabled] = useState(user?.monthlyBudget !== null && user?.monthlyBudget !== undefined);
   const [monthlyBudget, setMonthlyBudget] = useState(user?.monthlyBudget || "");
+
+  // Mobile navigation preference state
+  const [mobileNavStyle, setMobileNavStyle] = useState(() => localStorage.getItem("mobileNavStyle") || "bottom_bar");
+
+  const updateMobileNavStyle = (style) => {
+    setMobileNavStyle(style);
+    localStorage.setItem("mobileNavStyle", style);
+    window.dispatchEvent(new Event("mobileNavStyleChange"));
+  };
 
   // Password fields state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -273,6 +283,86 @@ export default function Profile() {
             </button>
           </div>
         </form>
+
+        {/* Card 3: Mobile Navigation Preference (Only visible on mobile screens) */}
+        <div className="card mobile-only-setting" style={{ flexDirection: "column", gap: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: "0 0 4px 0", fontFamily: "var(--font-display)", display: "flex", alignItems: "center", gap: 8 }}>
+            <Smartphone size={18} /> Mobile Navigation Style
+          </h2>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0, lineHeight: 1.4 }}>
+            Select how you want to navigate when using the app on a mobile phone or tablet screen.
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
+            {/* Option A: Slide-Out Drawer (3-Line Top-Left Hamburger) */}
+            <div
+              onClick={() => updateMobileNavStyle("hamburger_drawer")}
+              style={{
+                padding: "14px 16px",
+                borderRadius: "var(--radius-sm)",
+                background: mobileNavStyle === "hamburger_drawer" ? "var(--accent-soft)" : "var(--bg-elevated)",
+                border: mobileNavStyle === "hamburger_drawer" ? "2px solid var(--accent)" : "1px solid var(--border)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+                transition: "all 0.2s ease"
+              }}
+            >
+              <input
+                type="radio"
+                className="custom-checkbox"
+                name="mobileNavStyle"
+                checked={mobileNavStyle === "hamburger_drawer"}
+                onChange={() => updateMobileNavStyle("hamburger_drawer")}
+                style={{ marginTop: 2, borderRadius: "50%" }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>Slide-out Menu Drawer (3-Line Top-Left Icon)</span>
+                  {mobileNavStyle === "hamburger_drawer" && <span style={{ fontSize: 11, background: "var(--accent)", color: "#fff", padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>Active</span>}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.4 }}>
+                  Hides bottom bar. Tapping the ≡ 3-line icon on top-left opens a full sliding page listing all menus with item titles &amp; light grey descriptions.
+                </div>
+              </div>
+            </div>
+
+            {/* Option B: Bottom Bar + Swipe Up Grid (Default) */}
+            <div
+              onClick={() => updateMobileNavStyle("bottom_bar")}
+              style={{
+                padding: "14px 16px",
+                borderRadius: "var(--radius-sm)",
+                background: mobileNavStyle === "bottom_bar" ? "var(--accent-soft)" : "var(--bg-elevated)",
+                border: mobileNavStyle === "bottom_bar" ? "2px solid var(--accent)" : "1px solid var(--border)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+                transition: "all 0.2s ease"
+              }}
+            >
+              <input
+                type="radio"
+                className="custom-checkbox"
+                name="mobileNavStyle"
+                checked={mobileNavStyle === "bottom_bar"}
+                onChange={() => updateMobileNavStyle("bottom_bar")}
+                style={{ marginTop: 2, borderRadius: "50%" }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>Bottom Navigation Bar + Swipe-Up Grid (Default)</span>
+                  {mobileNavStyle === "bottom_bar" && <span style={{ fontSize: 11, background: "var(--accent)", color: "#fff", padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>Active</span>}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.4 }}>
+                  Horizontal scrollable bottom bar with swipe left/right &amp; swipe-up gesture to reveal all features in a 4-column grid.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div style={{ marginTop: 24 }}>

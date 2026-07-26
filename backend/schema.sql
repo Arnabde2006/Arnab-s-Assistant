@@ -116,6 +116,45 @@ CREATE TABLE IF NOT EXISTS debts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  plan_type TEXT NOT NULL DEFAULT 'free_trial' CHECK (plan_type IN ('free_trial', 'paid')),
+  amount NUMERIC NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT '₹',
+  billing_cycle TEXT NOT NULL DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly', 'yearly', 'one_time')),
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  renewal_date DATE NOT NULL,
+  remind_days_before INTEGER NOT NULL DEFAULT 3,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'paused')),
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS nptel_courses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_name TEXT NOT NULL,
+  duration_weeks INTEGER NOT NULL DEFAULT 8,
+  start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  assignment_due_day INTEGER NOT NULL DEFAULT 3, -- 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+  exam_date DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS nptel_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL REFERENCES nptel_courses(id) ON DELETE CASCADE,
+  week_number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  due_date DATE NOT NULL,
+  submitted BOOLEAN NOT NULL DEFAULT false,
+  score NUMERIC,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_subjects_user ON subjects(user_id);
 CREATE INDEX IF NOT EXISTS idx_day_attendance_user ON day_attendance(user_id);
 CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, date);
@@ -125,3 +164,6 @@ CREATE INDEX IF NOT EXISTS idx_grades_user_sem ON grade_entries(user_id, semeste
 CREATE INDEX IF NOT EXISTS idx_holidays_user ON college_holidays(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_debts_user ON debts(user_id, settled);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_nptel_courses_user ON nptel_courses(user_id);
+CREATE INDEX IF NOT EXISTS idx_nptel_assignments_course ON nptel_assignments(course_id, due_date);

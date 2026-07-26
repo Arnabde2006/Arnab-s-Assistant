@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Wallet,
   ArrowLeftRight,
+  CreditCard,
+  Award,
   User
 } from "lucide-react";
 
@@ -27,6 +29,8 @@ const links = [
   { to: "/grades", label: "Grades", icon: GraduationCap },
   { to: "/finance", label: "Finance", icon: Wallet },
   { to: "/debts", label: "Debts", icon: ArrowLeftRight },
+  { to: "/subscriptions", label: "Subscriptions", icon: CreditCard },
+  { to: "/nptel", label: "NPTEL Courses", icon: Award },
   { to: "/pomodoro", label: "Focus timer", icon: Timer },
   { to: "/profile", label: "Profile", icon: User },
 ];

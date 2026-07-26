@@ -16,6 +16,8 @@ import viewRoutes from "./routes/view.js";
 import holidayRoutes from "./routes/holidays.js";
 import financeRoutes from "./routes/finance.js";
 import debtRoutes from "./routes/debts.js";
+import subscriptionRoutes from "./routes/subscriptions.js";
+import nptelRoutes from "./routes/nptel.js";
 
 // Fail fast at startup if required secrets are missing, rather than
 // surfacing a confusing 500 error on the first request that needs them.
@@ -105,6 +107,8 @@ app.use("/api/ai/exam-timetable", aiLimiter);
 app.use("/api/ai/grade-card", aiLimiter);
 app.use("/api/holidays/upload", aiLimiter);
 app.use("/api/finance/upload", aiLimiter);
+app.use("/api/subscriptions/parse-screenshot", aiLimiter);
+app.use("/api/nptel/parse-schedule", aiLimiter);
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
@@ -119,6 +123,8 @@ app.use("/api/view", viewRoutes);
 app.use("/api/holidays", holidayRoutes);
 app.use("/api/finance", financeRoutes);
 app.use("/api/debts", debtRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/api/nptel", nptelRoutes);
 
 // Catch-all for unknown routes.
 app.use((req, res) => {
