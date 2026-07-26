@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import Switch from "../components/Switch.jsx";
-import { CreditCard, AlertTriangle } from "lucide-react";
+import { CreditCard, Pencil, Check, X } from "lucide-react";
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -15,6 +15,74 @@ function formatDay(dateStr) {
   return { weekday: d.toLocaleDateString(undefined, { weekday: "short" }), num: d.getDate(), month: d.toLocaleDateString(undefined, { month: "short" }) };
 }
 
+// ── Inline Edit Modal ─────────────────────────────────────────────────────────
+function EditTodoModal({ todo, onSave, onClose }) {
+  const [text, setText] = useState(todo.text);
+  const [date, setDate] = useState(todo.date);
+  const [priority, setPriority] = useState(todo.priority);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    await onSave(todo.id, { text: text.trim(), date, priority });
+  }
+
+  return (
+    <div className="edit-todo-overlay" onClick={onClose}>
+      <div className="edit-todo-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="edit-todo-header">
+          <span className="edit-todo-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Pencil size={16} style={{ color: "var(--primary-color)" }} /> Edit Event
+          </span>
+          <button className="edit-todo-close" onClick={onClose} aria-label="Close">
+            <X size={16} />
+          </button>
+        </div>
+        <form onSubmit={handleSave} className="edit-todo-form">
+          <label className="edit-todo-label">Title</label>
+          <input
+            ref={inputRef}
+            className="input"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Event title..."
+          />
+
+          <label className="edit-todo-label">Date</label>
+          <input
+            className="input"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+
+          <label className="edit-todo-label">Priority</label>
+          <select className="input" value={priority} onChange={(e) => setPriority(e.target.value)}>
+            <option value="low">🟢 Low</option>
+            <option value="normal">🔵 Normal</option>
+            <option value="urgent">🔴 Urgent</option>
+          </select>
+
+          <div className="edit-todo-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn">
+              <Check size={14} /> Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function Todos() {
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState("normal");
@@ -24,6 +92,7 @@ export default function Todos() {
   const [nptelAssignments, setNptelAssignments] = useState([]);
   const [showHolidays, setShowHolidays] = useState(() => localStorage.getItem("showHolidays") !== "false");
   const [pageLoading, setPageLoading] = useState(true);
+  const [editingTodo, setEditingTodo] = useState(null); // todo object being edited
 
   useEffect(() => {
     localStorage.setItem("showHolidays", String(showHolidays));
@@ -31,7 +100,7 @@ export default function Todos() {
 
   const rangeStart = toISO(new Date());
   const rangeEndDate = new Date();
-  rangeEndDate.setDate(rangeEndDate.getDate() + 60); // fetch a wide window; exams can be weeks out
+  rangeEndDate.setDate(rangeEndDate.getDate() + 60);
   const rangeEnd = toISO(rangeEndDate);
 
   async function refresh() {
@@ -107,6 +176,12 @@ export default function Todos() {
     refresh();
   }
 
+  async function saveEdit(id, fields) {
+    await api.put(`/todos/${id}`, fields);
+    setEditingTodo(null);
+    refresh();
+  }
+
   // Active subscriptions mapping by date
   const activeSubs = subscriptions.filter((s) => s.status === "active");
 
@@ -134,6 +209,15 @@ export default function Todos() {
 
   return (
     <div>
+      {/* Edit Modal */}
+      {editingTodo && (
+        <EditTodoModal
+          todo={editingTodo}
+          onSave={saveEdit}
+          onClose={() => setEditingTodo(null)}
+        />
+      )}
+
       <div className="page-header">
         <div>
           <h1 className="page-title">To‑do &amp; Calendar</h1>
@@ -171,26 +255,15 @@ export default function Todos() {
             if (!sub.renewal_date) continue;
             const renDateStr = sub.renewal_date.split("T")[0];
 
-            // Trigger event on renewal_date itself
             if (renDateStr === date) {
-              subEvents.push({
-                sub,
-                type: "renewal_day",
-                isTrial: sub.plan_type === "free_trial",
-              });
+              subEvents.push({ sub, type: "renewal_day", isTrial: sub.plan_type === "free_trial" });
             } else {
-              // Trigger reminder N days before
               const renDateObj = new Date(renDateStr + "T00:00:00");
               const remindDateObj = new Date(renDateObj);
               remindDateObj.setDate(remindDateObj.getDate() - (sub.remind_days_before || 3));
               const remindDateStr = toISO(remindDateObj);
-
               if (remindDateStr === date) {
-                subEvents.push({
-                  sub,
-                  type: "reminder_day",
-                  isTrial: sub.plan_type === "free_trial",
-                });
+                subEvents.push({ sub, type: "reminder_day", isTrial: sub.plan_type === "free_trial" });
               }
             }
           }
@@ -287,18 +360,27 @@ export default function Todos() {
                   </div>
                 ))}
 
-                {/* Todos */}
+                {/* Todo Items */}
                 {dayTodos.map((t) => (
                   <div key={t.id} className={"todo-item" + (t.done ? " done" : "")}>
                     <input type="checkbox" className="custom-checkbox" checked={t.done} onChange={() => toggleDone(t)} />
                     <span className={`priority-dot priority-${t.priority}`} />
                     <span style={{ flex: 1 }}>{t.text}</span>
                     <button
-                      onClick={() => removeTodo(t.id)}
-                      style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: 14, padding: 8, minWidth: 32, minHeight: 32 }}
-                      aria-label="Delete task"
+                      onClick={() => setEditingTodo(t)}
+                      className="todo-action-btn"
+                      aria-label="Edit task"
+                      title="Edit"
                     >
-                      ✕
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      onClick={() => removeTodo(t.id)}
+                      className="todo-action-btn todo-delete-btn"
+                      aria-label="Delete task"
+                      title="Delete"
+                    >
+                      <X size={13} />
                     </button>
                   </div>
                 ))}
@@ -310,4 +392,3 @@ export default function Todos() {
     </div>
   );
 }
-
