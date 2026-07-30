@@ -77,12 +77,14 @@ export default function Nptel() {
     }
   };
 
-  const handleMoveToTop = (courseId, e) => {
-    e.stopPropagation();
-    const idx = courses.findIndex((c) => c.id === courseId);
-    if (idx <= 0) return;
-    const target = courses[idx];
-    const updated = [target, ...courses.filter((c) => c.id !== courseId)];
+  const handleMoveCourse = (index, direction, e) => {
+    if (e) e.stopPropagation();
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= courses.length) return;
+
+    const updated = [...courses];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(targetIndex, 0, moved);
     saveCourseOrder(updated);
   };
 
@@ -125,9 +127,6 @@ export default function Nptel() {
       setLoading(true);
       const data = await api.get("/nptel");
       setCourses(data.courses || []);
-      if (data.courses?.length > 0 && !expandedCourseId) {
-        setExpandedCourseId(data.courses[0].id);
-      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -539,21 +538,28 @@ export default function Nptel() {
                   onClick={() => setExpandedCourseId(isExpanded ? null : course.id)}
                 >
                   <div className="nptel-course-header-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div className="nptel-course-title-box" style={{ flex: 1, display: "flex", alignItems: "flex-start", gap: 6 }}>
+                    <div className="nptel-course-title-box" style={{ flex: 1, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      {/* Drag Handle */}
                       <span
-                        title="Drag to reorder"
+                        className="nptel-drag-handle"
+                        title="Drag to reorder courses"
                         style={{
-                          color: "var(--text-muted)",
+                          color: "var(--accent)",
+                          background: "var(--accent-soft)",
+                          padding: "5px 6px",
+                          borderRadius: 8,
                           cursor: "grab",
-                          paddingTop: 2,
-                          flexShrink: 0,
                           display: "inline-flex",
-                          opacity: 0.6,
+                          alignItems: "center",
+                          justify: "center",
+                          flexShrink: 0,
+                          marginTop: 1,
                         }}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <GripVertical size={18} />
                       </span>
+
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <h3 className="nptel-course-title">{course.course_name}</h3>
 
