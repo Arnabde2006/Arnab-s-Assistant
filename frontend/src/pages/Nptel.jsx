@@ -127,9 +127,6 @@ export default function Nptel() {
       setLoading(true);
       const data = await api.get("/nptel");
       setCourses(data.courses || []);
-      if (data.courses?.length > 0 && !expandedCourseId) {
-        setExpandedCourseId(data.courses[0].id);
-      }
     } catch (err) {
       console.error(err);
     } finally {
