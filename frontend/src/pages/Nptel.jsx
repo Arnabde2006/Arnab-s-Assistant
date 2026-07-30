@@ -77,12 +77,14 @@ export default function Nptel() {
     }
   };
 
-  const handleMoveToTop = (courseId, e) => {
-    e.stopPropagation();
-    const idx = courses.findIndex((c) => c.id === courseId);
-    if (idx <= 0) return;
-    const target = courses[idx];
-    const updated = [target, ...courses.filter((c) => c.id !== courseId)];
+  const handleMoveCourse = (index, direction, e) => {
+    if (e) e.stopPropagation();
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= courses.length) return;
+
+    const updated = [...courses];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(targetIndex, 0, moved);
     saveCourseOrder(updated);
   };
 
@@ -539,21 +541,55 @@ export default function Nptel() {
                   onClick={() => setExpandedCourseId(isExpanded ? null : course.id)}
                 >
                   <div className="nptel-course-header-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div className="nptel-course-title-box" style={{ flex: 1, display: "flex", alignItems: "flex-start", gap: 6 }}>
-                      <span
-                        title="Drag to reorder"
-                        style={{
-                          color: "var(--text-muted)",
-                          cursor: "grab",
-                          paddingTop: 2,
-                          flexShrink: 0,
-                          display: "inline-flex",
-                          opacity: 0.6,
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <GripVertical size={18} />
-                      </span>
+                    <div className="nptel-course-title-box" style={{ flex: 1, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      {/* Drag Handle & Mobile Reorder Controls */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0, marginTop: 1 }}>
+                        <span
+                          className="nptel-drag-handle"
+                          title="Drag to reorder courses"
+                          style={{
+                            color: "var(--accent)",
+                            background: "var(--accent-soft)",
+                            padding: "4px 4px",
+                            borderRadius: 6,
+                            cursor: "grab",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justify: "center",
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <GripVertical size={16} />
+                        </span>
+
+                        {courses.length > 1 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 0 }} onClick={(e) => e.stopPropagation()}>
+                            {index > 0 && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                onClick={(e) => handleMoveCourse(index, -1, e)}
+                                style={{ padding: "1px 2px", height: "auto", minHeight: 0, color: "var(--text-muted)" }}
+                                title="Move Up"
+                              >
+                                <ChevronUp size={12} />
+                              </button>
+                            )}
+                            {index < courses.length - 1 && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                onClick={(e) => handleMoveCourse(index, 1, e)}
+                                style={{ padding: "1px 2px", height: "auto", minHeight: 0, color: "var(--text-muted)" }}
+                                title="Move Down"
+                              >
+                                <ChevronDown size={12} />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <h3 className="nptel-course-title">{course.course_name}</h3>
 
