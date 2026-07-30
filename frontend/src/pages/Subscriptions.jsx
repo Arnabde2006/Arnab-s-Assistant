@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/client.js";
 import {
   CreditCard,
@@ -12,7 +12,10 @@ import {
   Trash2,
   ExternalLink,
   Sparkles,
-  Calendar
+  Calendar,
+  Camera,
+  Loader2,
+  GripVertical
 } from "lucide-react";
 
 function pad(n) {
@@ -54,6 +57,58 @@ export default function Subscriptions() {
   });
   
   const [formError, setFormError] = useState("");
+
+  // Multi-subscription preview state
+  const [extractedList, setExtractedList] = useState([]);
+  const [showMultiModal, setShowMultiModal] = useState(false);
+  const [savingMulti, setSavingMulti] = useState(false);
+
+  // Drag & Drop Subscription Reordering
+  const [draggedSubIndex, setDraggedSubIndex] = useState(null);
+  const [dragOverSubIndex, setDragOverSubIndex] = useState(null);
+
+  const saveSubOrder = async (updatedSubs) => {
+    setSubscriptions(updatedSubs);
+    try {
+      const subIds = updatedSubs.map((s) => s.id);
+      await api.put("/subscriptions/reorder", { subIds });
+    } catch (err) {
+      console.error("Failed to save subscription order:", err);
+    }
+  };
+
+  const handleSubDragStart = (e, index) => {
+    setDraggedSubIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+  };
+
+  const handleSubDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedSubIndex === null || draggedSubIndex === index) return;
+    setDragOverSubIndex(index);
+  };
+
+  const handleSubDrop = (e, targetIndex) => {
+    e.preventDefault();
+    if (draggedSubIndex === null || draggedSubIndex === targetIndex) {
+      setDraggedSubIndex(null);
+      setDragOverSubIndex(null);
+      return;
+    }
+    const updated = [...subscriptions];
+    const [moved] = updated.splice(draggedSubIndex, 1);
+    updated.splice(targetIndex, 0, moved);
+
+    setDraggedSubIndex(null);
+    setDragOverSubIndex(null);
+    saveSubOrder(updated);
+  };
+
+  const handleSubDragEnd = () => {
+    setDraggedSubIndex(null);
+    setDragOverSubIndex(null);
+  };
 
   async function loadSubscriptions() {
     try {
@@ -109,11 +164,11 @@ export default function Subscriptions() {
     setShowModal(true);
   };
 
-  const handleScreenshotUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const fileInputRef = useRef(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
-    if (!file.type.startsWith("image/")) {
+  const processImageFile = async (file) => {
+    if (!file || !file.type.startsWith("image/")) {
       alert("Please upload a valid image file (PNG, JPG, WEBP).");
       return;
     }
@@ -129,34 +184,99 @@ export default function Subscriptions() {
             mimeType: file.type,
           });
 
-          if (res.extracted) {
-            const ext = res.extracted;
+          const items = res.subscriptions || (res.extracted ? [res.extracted] : []);
+          if (items.length === 1) {
+            const ext = items[0];
             setEditingSub(null);
             setFormData({
               name: ext.name || "Subscription",
               plan_type: ext.plan_type || "free_trial",
-              amount: ext.amount !== undefined ? String(ext.amount) : "99",
+              amount: ext.amount !== undefined ? String(ext.amount) : "0",
               currency: ext.currency || "₹",
               billing_cycle: ext.billing_cycle || "monthly",
-              start_date: toISO(new Date()),
-              renewal_date: ext.renewal_date || toISO(new Date(Date.now() + 31 * 86400000)),
+              start_date: ext.start_date || toISO(new Date()),
+              renewal_date: ext.renewal_date || toISO(new Date(Date.now() + 30 * 86400000)),
               remind_days_before: ext.remind_days_before || 3,
               status: "active",
               notes: ext.notes || "Extracted from screenshot via AI",
             });
             setFormError("");
             setShowModal(true);
+          } else if (items.length > 1) {
+            setExtractedList(items.map((it, idx) => ({ ...it, id: `ext-${idx}`, selected: true })));
+            setShowMultiModal(true);
+          } else {
+            alert("No subscriptions found in the image. Please try another screenshot.");
           }
         } catch (err) {
           alert(err.message || "Failed to analyze image. Please try again or fill manually.");
         } finally {
           setUploading(false);
-          e.target.value = "";
         }
       };
       reader.readAsDataURL(file);
     } catch {
       setUploading(false);
+    }
+  };
+
+  const handleScreenshotUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processImageFile(file);
+      e.target.value = "";
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processImageFile(file);
+  };
+
+  useEffect(() => {
+    const handlePaste = (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.indexOf("image") !== -1) {
+          const file = item.getAsFile();
+          if (file) processImageFile(file);
+          break;
+        }
+      }
+    };
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, []);
+
+  const handleImportMulti = async () => {
+    const selectedItems = extractedList.filter((item) => item.selected);
+    if (selectedItems.length === 0) return;
+    setSavingMulti(true);
+    try {
+      await api.post("/subscriptions/bulk", { items: selectedItems });
+      setShowMultiModal(false);
+      setExtractedList([]);
+      loadSubscriptions();
+    } catch (err) {
+      alert(err.message || "Failed to import subscriptions.");
+    } finally {
+      setSavingMulti(false);
     }
   };
 
@@ -286,6 +406,63 @@ export default function Subscriptions() {
         </div>
       </div>
 
+      {/* ── Drag & Drop / Mobile Photo Upload Hero ── */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !uploading && fileInputRef.current?.click()}
+        style={{
+          border: `2px dashed ${isDragOver ? "var(--accent)" : "var(--border)"}`,
+          borderRadius: 14,
+          padding: "20px 18px",
+          textAlign: "center",
+          cursor: uploading ? "wait" : "pointer",
+          marginBottom: 24,
+          background: isDragOver ? "var(--accent-soft)" : "var(--bg-elevated)",
+          transition: "all 0.2s ease",
+          transform: isDragOver ? "scale(1.015)" : "scale(1)",
+          boxShadow: isDragOver ? "0 0 0 3px var(--accent-soft)" : "none",
+          position: "relative",
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleScreenshotUpload}
+          disabled={uploading}
+        />
+
+        {uploading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--accent)" }}>
+            <Loader2 size={22} style={{ animation: "spin 1s linear infinite" }} />
+            <span style={{ fontSize: 15, fontWeight: 600 }}>AI is reading your subscription screenshot…</span>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 6 }}>
+              <Camera size={22} style={{ color: "var(--accent)" }} />
+              <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+                {isDragOver ? "Drop subscription photo to extract ✨" : "Scan or Upload Subscription Screenshot"}
+              </span>
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+              Tap to choose photo or screenshot · drag &amp; drop on desktop ·{" "}
+              <kbd style={{ fontSize: 11, padding: "1px 5px", borderRadius: 4, background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                Ctrl+V
+              </kbd>{" "}
+              paste
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+              <Sparkles size={11} style={{ color: "var(--accent)" }} />
+              AI auto-extracts all service names, amounts, plan types &amp; renewal dates
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Filter Tabs */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {[
@@ -327,22 +504,31 @@ export default function Subscriptions() {
 
       {!loading && filteredSubs.length > 0 && (
         <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))" }}>
-          {filteredSubs.map((sub) => {
+          {filteredSubs.map((sub, index) => {
             const daysLeft = Number(sub.days_remaining);
             const isTrial = sub.plan_type === "free_trial";
             const isCancelled = sub.status === "cancelled";
             const isUrgent = !isCancelled && daysLeft >= 0 && daysLeft <= 5;
+            const isDragging = draggedSubIndex === index;
+            const isDragTarget = dragOverSubIndex === index;
 
             return (
               <div
                 key={sub.id}
                 className="card"
+                draggable
+                onDragStart={(e) => handleSubDragStart(e, index)}
+                onDragOver={(e) => handleSubDragOver(e, index)}
+                onDrop={(e) => handleSubDrop(e, index)}
+                onDragEnd={handleSubDragEnd}
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "space-between",
-                  border: isUrgent ? "1px solid var(--warning)" : isCancelled ? "1px solid var(--border-color)" : undefined,
-                  opacity: isCancelled ? 0.75 : 1,
+                  border: isDragTarget ? "2px solid var(--accent)" : isUrgent ? "1px solid var(--warning)" : isCancelled ? "1px solid var(--border-color)" : undefined,
+                  opacity: isDragging ? 0.45 : isCancelled ? 0.75 : 1,
+                  transform: isDragTarget ? "scale(1.01)" : "scale(1)",
+                  transition: "all 0.15s ease",
                   position: "relative",
                   overflow: "hidden",
                 }}
@@ -350,32 +536,53 @@ export default function Subscriptions() {
                 {/* Top Badge Banner */}
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                    <div>
-                      <h3 style={{ margin: "0 0 4px 0", fontSize: 17, fontWeight: 700 }}>{sub.name}</h3>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 600,
-                            padding: "2px 8px",
-                            borderRadius: 12,
-                            background: isCancelled
-                              ? "var(--bg-secondary)"
-                              : isTrial
-                              ? "rgba(234, 179, 8, 0.15)"
-                              : "rgba(59, 130, 246, 0.15)",
-                            color: isCancelled
-                              ? "var(--text-muted)"
-                              : isTrial
-                              ? "var(--warning)"
-                              : "#3b82f6",
-                          }}
-                        >
-                          {isCancelled ? "Cancelled" : isTrial ? "Free Trial" : "Paid Plan"}
-                        </span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-                          {sub.currency}{sub.amount} / {sub.billing_cycle}
-                        </span>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flex: 1, minWidth: 0 }}>
+                      <span
+                        className="sub-drag-handle"
+                        title="Drag to reorder subscriptions"
+                        style={{
+                          color: "var(--accent)",
+                          background: "var(--accent-soft)",
+                          padding: "5px 6px",
+                          borderRadius: 8,
+                          cursor: "grab",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justify: "center",
+                          flexShrink: 0,
+                          marginTop: 1,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <GripVertical size={18} />
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h3 style={{ margin: "0 0 4px 0", fontSize: 17, fontWeight: 700 }}>{sub.name}</h3>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: "2px 8px",
+                              borderRadius: 12,
+                              background: isCancelled
+                                ? "var(--bg-secondary)"
+                                : isTrial
+                                ? "rgba(234, 179, 8, 0.15)"
+                                : "rgba(59, 130, 246, 0.15)",
+                              color: isCancelled
+                                ? "var(--text-muted)"
+                                : isTrial
+                                ? "var(--warning)"
+                                : "#3b82f6",
+                            }}
+                          >
+                            {isCancelled ? "Cancelled" : isTrial ? "Free Trial" : "Paid Plan"}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
+                            {sub.currency}{sub.amount} / {sub.billing_cycle}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -640,6 +847,88 @@ export default function Subscriptions() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-Subscription Import Preview Modal */}
+      {showMultiModal && (
+        <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)" }}>
+          <div className="card" style={{ maxWidth: 540, width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, boxShadow: "var(--shadow)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Found {extractedList.length} Subscriptions</h3>
+                <p style={{ margin: "4px 0 0 0", fontSize: 12, color: "var(--text-muted)" }}>
+                  Select which subscriptions you want to import into your tracker.
+                </p>
+              </div>
+              <button className="btn-ghost btn" style={{ padding: "4px 8px" }} onClick={() => setShowMultiModal(false)}>✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4, marginBottom: 16 }}>
+              {extractedList.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: 10,
+                    border: item.selected ? "1px solid var(--accent)" : "1px solid var(--border)",
+                    background: item.selected ? "var(--accent-soft)" : "var(--bg)",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    className="custom-checkbox"
+                    checked={item.selected}
+                    onChange={() => {
+                      setExtractedList((prev) =>
+                        prev.map((it) => (it.id === item.id ? { ...it, selected: !it.selected } : it))
+                      );
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{item.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                      {item.currency}{item.amount} / {item.billing_cycle} · Renews {item.renewal_date}
+                    </div>
+                    {item.notes && <div style={{ fontSize: 11, color: "var(--text-muted)", opacity: 0.8, marginTop: 2 }}>{item.notes}</div>}
+                  </div>
+                  <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 12, background: item.plan_type === "free_trial" ? "rgba(234,179,8,0.15)" : "rgba(59,130,246,0.15)", color: item.plan_type === "free_trial" ? "#eab308" : "#3b82f6", fontWeight: 600 }}>
+                    {item.plan_type === "free_trial" ? "Free Trial" : "Paid"}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+              <button
+                type="button"
+                className="btn-ghost btn"
+                style={{ fontSize: 12 }}
+                onClick={() => {
+                  const allSelected = extractedList.every((it) => it.selected);
+                  setExtractedList((prev) => prev.map((it) => ({ ...it, selected: !allSelected })));
+                }}
+              >
+                {extractedList.every((it) => it.selected) ? "Deselect All" : "Select All"}
+              </button>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-ghost" type="button" onClick={() => setShowMultiModal(false)}>Cancel</button>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={savingMulti || extractedList.filter((it) => it.selected).length === 0}
+                  onClick={handleImportMulti}
+                >
+                  {savingMulti ? "Importing…" : `Import ${extractedList.filter((it) => it.selected).length} Subscription(s)`}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
