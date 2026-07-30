@@ -27,8 +27,10 @@ async function ensureTable() {
       remind_days_before INTEGER NOT NULL DEFAULT 3,
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'paused')),
       notes TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
     CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id, status);
   `);
   tableEnsured = true;
@@ -44,11 +46,31 @@ router.get("/", asyncHandler(async (req, res) => {
      FROM subscriptions
      WHERE user_id = $1
      ORDER BY
+       sort_order ASC,
        CASE WHEN status = 'active' THEN 0 ELSE 1 END,
        renewal_date ASC`,
     [req.userId]
   );
   res.json({ subscriptions: result.rows });
+}));
+
+// ─── PUT /api/subscriptions/reorder ─────────────────────────────────────────
+router.put("/reorder", asyncHandler(async (req, res) => {
+  await ensureTable();
+  const { subIds } = req.body;
+  if (!Array.isArray(subIds)) {
+    return res.status(400).json({ error: "subIds array is required" });
+  }
+
+  const pool = getPool();
+  for (let i = 0; i < subIds.length; i++) {
+    await pool.query(
+      "UPDATE subscriptions SET sort_order = $1 WHERE id = $2 AND user_id = $3",
+      [i, subIds[i], req.userId]
+    );
+  }
+
+  res.json({ success: true });
 }));
 
 // ─── POST /api/subscriptions ─────────────────────────────────────────────────
@@ -132,6 +154,43 @@ router.delete("/:id", asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
+// ─── POST /api/subscriptions/bulk ───────────────────────────────────────────
+router.post("/bulk", asyncHandler(async (req, res) => {
+  await ensureTable();
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Items array is required" });
+  }
+
+  const pool = getPool();
+  const created = [];
+
+  for (const item of items) {
+    if (!item.name || !item.renewal_date) continue;
+    const result = await pool.query(
+      `INSERT INTO subscriptions
+       (user_id, name, plan_type, amount, currency, billing_cycle, start_date, renewal_date, remind_days_before, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, CURRENT_DATE), $8, $9, $10)
+       RETURNING *, (renewal_date - CURRENT_DATE) AS days_remaining`,
+      [
+        req.userId,
+        item.name.trim(),
+        item.plan_type || "free_trial",
+        item.amount !== undefined && item.amount !== "" ? Number(item.amount) : 0,
+        item.currency || "₹",
+        item.billing_cycle || "monthly",
+        item.start_date || null,
+        item.renewal_date,
+        item.remind_days_before !== undefined && item.remind_days_before !== "" ? Number(item.remind_days_before) : 3,
+        item.notes ? item.notes.trim() : "",
+      ]
+    );
+    if (result.rows[0]) created.push(result.rows[0]);
+  }
+
+  res.status(201).json({ created, count: created.length });
+}));
+
 // ─── POST /api/subscriptions/parse-screenshot ───────────────────────────────
 router.post("/parse-screenshot", asyncHandler(async (req, res) => {
   const { fileBase64, mimeType } = req.body;
@@ -141,29 +200,36 @@ router.post("/parse-screenshot", asyncHandler(async (req, res) => {
 
   const todayStr = toISO(new Date());
 
-  const systemInstruction = `You extract subscription and free trial details from an image or screenshot (e.g., Crunchyroll, Netflix, Spotify, Amazon Prime, YouTube Premium, etc.).
+  const systemInstruction = `You extract subscription and free trial details from an image or screenshot (e.g. Crunchyroll, Netflix, Spotify, Amazon Prime, YouTube Premium, Apple Subscriptions list, Google Play Subscriptions list, bank recurring payments, email summary, etc.).
 Today's date is ${todayStr}.
 
-Extract details and return ONLY a JSON object (no markdown formatting outside of JSON) with these fields:
+Extract ALL subscriptions and free trials visible in the image and return ONLY a JSON object with a "subscriptions" array:
 {
-  "name": "string (e.g. Crunchyroll)",
-  "plan_type": "free_trial or paid",
-  "amount": number (e.g. 99.00 or 0),
-  "currency": "string (e.g. ₹ or $ or €)",
-  "billing_cycle": "monthly or yearly or one_time",
-  "renewal_date": "YYYY-MM-DD (e.g. 2026-08-26. If the screenshot mentions '31 days left' or 'ends in X days' relative to today, calculate the exact date based on today's date ${todayStr})",
-  "remind_days_before": 3,
-  "notes": "string (e.g. Free Trial / 31 days left. Auto-renews at ₹99.00/month starting August 26, 2026)"
+  "subscriptions": [
+    {
+      "name": "string (e.g. Crunchyroll)",
+      "plan_type": "free_trial or paid",
+      "amount": number (e.g. 99.00 or 0),
+      "currency": "string (e.g. ₹ or $ or €)",
+      "billing_cycle": "monthly or yearly or one_time",
+      "renewal_date": "YYYY-MM-DD (e.g. 2026-08-26. If the screenshot mentions '31 days left' or 'ends in X days' relative to today, calculate the exact date based on today's date ${todayStr})",
+      "remind_days_before": 3,
+      "notes": "string (e.g. Free Trial / 31 days left. Auto-renews at ₹99.00/month starting August 26, 2026)"
+    }
+  ]
 }
 
-If details like amount or currency aren't clearly visible, use reasonable defaults (amount: 0, currency: "₹", plan_type: "free_trial", billing_cycle: "monthly").
-Always infer or calculate the renewal_date as YYYY-MM-DD.`;
+Rules:
+1. If the screenshot lists multiple subscriptions, include EVERY subscription visible in the list.
+2. If details like amount or currency aren't clearly visible, use reasonable defaults (amount: 0, currency: "₹", plan_type: "free_trial", billing_cycle: "monthly").
+3. Always infer or calculate renewal_date as YYYY-MM-DD.
+4. If no subscriptions can be found, return {"subscriptions": []}.`;
 
   const text = await callGemini({
     systemInstruction,
     parts: [
       { inline_data: { mime_type: mimeType, data: fileBase64 } },
-      { text: "Extract subscription details from this image." },
+      { text: "Extract all subscription details from this image." },
     ],
     jsonMode: true,
   });
@@ -175,7 +241,28 @@ Always infer or calculate the renewal_date as YYYY-MM-DD.`;
     return res.status(502).json({ error: "Couldn't read subscription details from the image clearly. Please try another screenshot or enter manually." });
   }
 
-  res.json({ extracted: parsed });
+  let list = [];
+  if (Array.isArray(parsed)) {
+    list = parsed;
+  } else if (Array.isArray(parsed?.subscriptions)) {
+    list = parsed.subscriptions;
+  } else if (parsed?.name) {
+    list = [parsed];
+  }
+
+  const validItems = list.map((item) => ({
+    name: item.name || "Subscription",
+    plan_type: item.plan_type || "free_trial",
+    amount: item.amount !== undefined ? Number(item.amount) : 0,
+    currency: item.currency || "₹",
+    billing_cycle: item.billing_cycle || "monthly",
+    start_date: item.start_date || todayStr,
+    renewal_date: item.renewal_date || toISO(new Date(Date.now() + 30 * 86400000)),
+    remind_days_before: item.remind_days_before || 3,
+    notes: item.notes || "Extracted from screenshot via AI",
+  }));
+
+  res.json({ subscriptions: validItems, extracted: validItems[0] || null });
 }));
 
 export default router;
