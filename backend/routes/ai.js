@@ -10,6 +10,122 @@ import { computeFinanceSummary } from "../lib/financeSummary.js";
 const router = express.Router();
 router.use(requireAuth);
 
+// ---- AI Action Execution Engine -----------------------------------------------
+
+async function processAiChatAction(userId, message) {
+  const pool = getPool();
+  const todayStr = toISO(new Date());
+
+  const systemInstruction = `You are the intent and action parser for a personal college companion app.
+Today's date is: ${todayStr}.
+Analyze the student's input. If they are requesting an action to create, update, or delete a calendar item, task, exam, subscription, or attendance log, extract the action parameters into JSON.
+
+Supported actions:
+1. Add To-do / Calendar Event:
+   Input example: "Mark 3rd of Aug in calendar as College opening day" or "Remind me to submit assignment tomorrow"
+   JSON: {"action": "add_todo", "text": "College opening day", "date": "YYYY-MM-DD", "priority": "normal"|"urgent"}
+
+2. Mark To-do as Completed or Delete:
+   Input example: "Mark College opening day as done" or "Delete assignment task"
+   JSON: {"action": "mark_todo_done", "text": "College opening day"} or {"action": "delete_todo", "text": "College opening day"}
+
+3. Add Subscription / Free Trial:
+   Input example: "Add Crunchyroll free trial ending Aug 26"
+   JSON: {"action": "add_subscription", "name": "Crunchyroll", "amount": 99, "currency": "₹", "billing_cycle": "monthly", "plan_type": "free_trial"|"paid", "renewal_date": "YYYY-MM-DD"}
+
+4. Add Exam:
+   Input example: "Add Python exam on Aug 10"
+   JSON: {"action": "add_exam", "course": "Python", "date": "YYYY-MM-DD", "time": "string"}
+
+5. Mark Attendance Log:
+   Input example: "Mark me present for today"
+   JSON: {"action": "mark_attendance", "date": "YYYY-MM-DD", "status": "present"|"absent"|"half_day"}
+
+6. Mark NPTEL Assignment:
+   Input example: "Mark Python week 1 assignment as completed"
+   JSON: {"action": "mark_nptel", "week_number": 1, "submitted": true}
+
+If the user message is general conversation or an informational question, return:
+{"action": "none"}
+
+Return ONLY valid JSON.`;
+
+  try {
+    const rawJson = await callGemini({
+      systemInstruction,
+      parts: [{ text: message }],
+      jsonMode: true,
+    });
+
+    const parsed = safeParseJSON(rawJson);
+    if (!parsed || !parsed.action || parsed.action === "none") return null;
+
+    if (parsed.action === "add_todo" && parsed.text && parsed.date) {
+      const res = await pool.query(
+        "INSERT INTO todos (user_id, text, date, priority, source) VALUES ($1, $2, $3, $4, 'ai') RETURNING *",
+        [userId, parsed.text, parsed.date, parsed.priority || "normal"]
+      );
+      return { success: true, type: "todo", item: res.rows[0], message: `Successfully saved "${parsed.text}" on ${parsed.date} directly into the database & calendar!` };
+    }
+
+    if (parsed.action === "mark_todo_done" && parsed.text) {
+      await pool.query(
+        "UPDATE todos SET done = true WHERE user_id = $1 AND LOWER(text) LIKE $2",
+        [userId, `%${parsed.text.toLowerCase()}%`]
+      );
+      return { success: true, type: "todo_done", message: `Marked task containing "${parsed.text}" as completed in the database.` };
+    }
+
+    if (parsed.action === "delete_todo" && parsed.text) {
+      await pool.query(
+        "DELETE FROM todos WHERE user_id = $1 AND LOWER(text) LIKE $2",
+        [userId, `%${parsed.text.toLowerCase()}%`]
+      );
+      return { success: true, type: "todo_delete", message: `Deleted task containing "${parsed.text}" from the database.` };
+    }
+
+    if (parsed.action === "add_subscription" && parsed.name && parsed.renewal_date) {
+      const res = await pool.query(
+        `INSERT INTO subscriptions (user_id, name, plan_type, amount, currency, billing_cycle, start_date, renewal_date, remind_days_before, status, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 3, 'active', 'Added via AI Assistant') RETURNING *`,
+        [userId, parsed.name, parsed.plan_type || "paid", parsed.amount || 0, parsed.currency || "₹", parsed.billing_cycle || "monthly", todayStr, parsed.renewal_date]
+      );
+      return { success: true, type: "subscription", item: res.rows[0], message: `Successfully added subscription "${parsed.name}" renewing on ${parsed.renewal_date} to database.` };
+    }
+
+    if (parsed.action === "add_exam" && parsed.course && parsed.date) {
+      const res = await pool.query(
+        "INSERT INTO exams (user_id, course, exam_date, exam_time) VALUES ($1, $2, $3, $4) RETURNING *",
+        [userId, parsed.course, parsed.date, parsed.time || ""]
+      );
+      await pool.query(
+        "INSERT INTO todos (user_id, text, date, priority, source) VALUES ($1, $2, $3, 'urgent', 'exam')",
+        [userId, `Exam: ${parsed.course}`, parsed.date]
+      );
+      return { success: true, type: "exam", item: res.rows[0], message: `Successfully added exam "${parsed.course}" on ${parsed.date} to calendar.` };
+    }
+
+    if (parsed.action === "mark_attendance" && parsed.date && parsed.status) {
+      await pool.query(
+        "INSERT INTO day_attendance (user_id, date, status) VALUES ($1, $2, $3) ON CONFLICT (user_id, date) DO UPDATE SET status = EXCLUDED.status",
+        [userId, parsed.date, parsed.status]
+      );
+      return { success: true, type: "attendance", message: `Marked attendance as ${parsed.status} for ${parsed.date}.` };
+    }
+
+    if (parsed.action === "mark_nptel" && parsed.week_number) {
+      await pool.query(
+        "UPDATE nptel_assignments SET submitted = $1 WHERE user_id = $2 AND week_number = $3",
+        [parsed.submitted ?? true, userId, parsed.week_number]
+      );
+      return { success: true, type: "nptel", message: `Updated NPTEL Week ${parsed.week_number} assignment submission.` };
+    }
+  } catch (err) {
+    console.error("[AI Action Execution Error]:", err);
+  }
+  return null;
+}
+
 // ---- Chat assistant (SSE streaming) ----------------------------------------
 
 router.post("/chat", async (req, res) => {
@@ -19,6 +135,9 @@ router.post("/chat", async (req, res) => {
 
     const pool = getPool();
     const today = toISO(new Date());
+
+    // Execute any requested database action first (e.g. adding calendar event / todo / subscription)
+    const actionResult = await processAiChatAction(req.userId, message);
 
     const [attendanceRes, todosRes, examsRes, gradesSummary, financeSummary, subsRes, nptelRes] = await Promise.all([
       pool.query("SELECT status FROM day_attendance WHERE user_id = $1", [req.userId]),
@@ -41,6 +160,7 @@ router.post("/chat", async (req, res) => {
 
     const contextLines = [
       `Today's date: ${today}.`,
+      actionResult ? `SYSTEM NOTIFICATION FOR ASSISTANT: ${actionResult.message}` : "",
       pct !== null
         ? `The student's overall attendance is ${pct}% (${present} present, ${halfDay} half days, ${total} total days logged).`
         : "No attendance has been logged yet.",
@@ -62,7 +182,7 @@ router.post("/chat", async (req, res) => {
       subsList.length
         ? `Active Subscriptions & Free Trials: ${subsList.map((s) => `${s.name} (${s.plan_type === 'free_trial' ? 'Free Trial' : 'Paid'}, ${s.currency}${s.amount}, renewal ${s.renewal_date}, ${s.days_left} days left)`).join("; ")}.`
         : "No active subscriptions tracked.",
-    ].join(" ");
+    ].filter(Boolean).join(" ");
 
     const systemInstruction = `You are the built-in personal assistant for "Arnab's Assistant", a comprehensive personal & college companion app (attendance tracker, to-do & calendar, timetable, subscription & trial reminders, exam schedule, focus timer, grade tracker, finance tracker). Answer the student helpfully and concisely, using the context below when relevant. If asked something outside the app's scope, still answer normally as a helpful general assistant. Keep answers short and conversational, plain text, no markdown headers.
 

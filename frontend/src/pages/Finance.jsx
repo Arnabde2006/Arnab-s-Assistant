@@ -1,9 +1,31 @@
 import { useEffect, useState, useRef } from "react";
 import { api } from "../api/client.js";
-import { fileToBase64 } from "../utils/fileToBase64.js";
+import { fileToBase64, fileToArrayBuffer } from "../utils/fileToBase64.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import FileUpload from "../components/FileUpload.jsx";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Lock } from "lucide-react";
+
+async function extractPdfText(arrayBuffer, password = "") {
+  if (!window.pdfjsLib) {
+    throw new Error("PDF parser library is loading. Please try again in a moment.");
+  }
+  // Create a copy of arrayBuffer because PDF.js worker detaches the underlying buffer
+  const bufferCopy = arrayBuffer.slice(0);
+  const loadingTask = window.pdfjsLib.getDocument({
+    data: new Uint8Array(bufferCopy),
+    password: password || undefined,
+  });
+
+  const pdf = await loadingTask.promise;
+  let fullText = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map((item) => item.str);
+    fullText += `\n--- Page ${i} ---\n` + strings.join(" ");
+  }
+  return fullText;
+}
 
 const CATEGORY_LABELS = {
   food: "Food",
@@ -217,6 +239,13 @@ export default function Finance() {
   const [uploadError, setUploadError] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
 
+  // PDF Password Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [pdfPassword, setPdfPassword] = useState("");
+  const [pdfPasswordError, setPdfPasswordError] = useState("");
+  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingBuffer, setPendingBuffer] = useState(null);
+
   const [budgetInput, setBudgetInput] = useState(user?.monthlyBudget ?? "");
   const [budgetSaving, setBudgetSaving] = useState(false);
 
@@ -252,23 +281,70 @@ export default function Finance() {
     refresh(selectedMonth);
   }
 
-  async function uploadStatement(e) {
-    e.preventDefault();
-    if (!file) {
+  async function uploadStatement(e, providedPassword = null) {
+    if (e) e.preventDefault();
+    const targetFile = file || pendingFile;
+    if (!targetFile) {
       setUploadError("Choose a bank statement PDF or a UPI screenshot first.");
       return;
     }
     setUploadError("");
     setUploadResult(null);
     setUploadLoading(true);
+
     try {
-      const fileBase64 = await fileToBase64(file);
-      const result = await api.post("/finance/upload", { fileBase64, mimeType: file.type });
-      setUploadResult(result);
-      setFile(null);
-      refresh(selectedMonth);
+      const isPdf = targetFile.type === "application/pdf" || targetFile.name.toLowerCase().endsWith(".pdf");
+
+      if (isPdf) {
+        let buffer = pendingBuffer;
+        if (!buffer || buffer.byteLength === 0) {
+          buffer = await fileToArrayBuffer(targetFile);
+          setPendingBuffer(buffer);
+        }
+
+        const pwdToTry = providedPassword !== null ? providedPassword : pdfPassword;
+
+        let pdfText;
+        try {
+          pdfText = await extractPdfText(buffer, pwdToTry);
+          // Password succeeded — close modal immediately
+          setShowPasswordModal(false);
+          setPdfPassword("");
+          setPdfPasswordError("");
+        } catch (pdfErr) {
+          const isPasswordRequired =
+            pdfErr.name === "PasswordException" ||
+            pdfErr.code === 1 ||
+            (pdfErr.message && pdfErr.message.toLowerCase().includes("password"));
+
+          if (isPasswordRequired) {
+            setPendingFile(targetFile);
+            setShowPasswordModal(true);
+            setPdfPasswordError(providedPassword !== null ? "Incorrect password. Please try again." : "");
+            setUploadLoading(false);
+            return;
+          } else {
+            setShowPasswordModal(false);
+            throw pdfErr;
+          }
+        }
+
+        const result = await api.post("/finance/upload", { pdfText });
+        setUploadResult(result);
+        setFile(null);
+        setPendingFile(null);
+        setPendingBuffer(null);
+        refresh(selectedMonth);
+      } else {
+        const fileBase64 = await fileToBase64(targetFile);
+        const result = await api.post("/finance/upload", { fileBase64, mimeType: targetFile.type });
+        setUploadResult(result);
+        setFile(null);
+        refresh(selectedMonth);
+      }
     } catch (err) {
-      setUploadError(err.message);
+      setShowPasswordModal(false);
+      setUploadError(err.message || "Failed to process bank statement.");
     } finally {
       setUploadLoading(false);
     }
@@ -481,6 +557,10 @@ export default function Finance() {
           <div className="label" style={{ marginBottom: 8 }}>Upload statement or UPI screenshot</div>
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
             A bank statement PDF or a Google Pay/PhonePe/Paytm payment screenshot — transactions are auto-added and categorized, and you can edit or delete any of them below.
+            <br />
+            <span style={{ fontSize: 11, color: "var(--accent)", display: "inline-block", marginTop: 4 }}>
+              💡 <strong>Password-protected PDFs supported:</strong> If your bank statement is encrypted, simply upload it and enter your PDF password when prompted!
+            </span>
           </p>
           <FileUpload
             id="finance-upload"
@@ -667,6 +747,58 @@ export default function Finance() {
           ))}
         </div>
       </div>
+
+      {/* PDF Password Modal */}
+      {showPasswordModal && (
+        <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)" }}>
+          <div className="card" style={{ maxWidth: 420, width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, boxShadow: "var(--shadow)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}>
+                <Lock size={20} />
+              </div>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Password Protected PDF</h3>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px 0", lineHeight: 1.4 }}>
+              This bank statement is encrypted. Please enter the PDF password (e.g. DOB in <code>DDMMYYYY</code> format, PAN number, or Account number) to unlock it for AI extraction.
+            </p>
+
+            <form onSubmit={(e) => { e.preventDefault(); uploadStatement(null, pdfPassword); }}>
+              <input
+                type="password"
+                className="input"
+                placeholder="Enter PDF password..."
+                value={pdfPassword}
+                onChange={(e) => setPdfPassword(e.target.value)}
+                autoFocus
+                required
+                style={{ width: "100%", marginBottom: 12 }}
+              />
+              {pdfPasswordError && (
+                <div style={{ color: "#ef4444", fontSize: 12, marginBottom: 12, fontWeight: 500 }}>
+                  {pdfPasswordError}
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setPendingFile(null);
+                    setPendingBuffer(null);
+                    setPdfPassword("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button className="btn" type="submit" disabled={uploadLoading}>
+                  {uploadLoading ? "Decrypting..." : "Unlock & Extract"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

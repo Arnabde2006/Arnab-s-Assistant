@@ -11,3 +11,11 @@ export function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
+export function fileToArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Could not read file buffer"));
+    reader.readAsArrayBuffer(file);
+  });
+}

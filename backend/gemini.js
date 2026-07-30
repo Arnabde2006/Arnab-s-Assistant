@@ -10,21 +10,39 @@
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 function hasVision(parts) {
-  return parts.some((p) => p.inline_data);
+  return parts.some((p) => p.inline_data || p.inlineData);
 }
 
-function convertPartsToMessages(systemInstruction, parts) {
+function cleanJsonResponse(str) {
+  if (!str) return str;
+  let cleaned = str.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  }
+  return cleaned;
+}
+
+function convertPartsToMessages(systemInstruction, parts, jsonMode = false) {
   const messages = [];
-  if (systemInstruction) {
-    messages.push({ role: "system", content: systemInstruction });
+
+  let sys = systemInstruction || "";
+  if (jsonMode) {
+    const jsonPrompt = "IMPORTANT: Response must be a valid JSON object. Do NOT wrap in markdown or code blocks. Output raw JSON only.";
+    sys = sys ? `${sys}\n\n${jsonPrompt}` : jsonPrompt;
+  }
+
+  if (sys) {
+    messages.push({ role: "system", content: sys });
   }
 
   const content = [];
   for (const part of parts) {
     if (part.text) {
       content.push({ type: "text", text: part.text });
-    } else if (part.inline_data) {
-      const { mime_type: mime, data: base64 } = part.inline_data;
+    } else if (part.inline_data || part.inlineData) {
+      const inline = part.inline_data || part.inlineData;
+      const mime = inline.mime_type || inline.mimeType;
+      const base64 = inline.data;
       content.push({
         type: "image_url",
         image_url: { url: `data:${mime};base64,${base64}` },
@@ -51,8 +69,28 @@ function geminiEndpoint(stream = false) {
 }
 
 async function tryGemini({ systemInstruction, parts, jsonMode, onChunk }) {
+  const normalizedParts = parts.map((p) => {
+    if (p.inline_data) {
+      return {
+        inlineData: {
+          mimeType: p.inline_data.mime_type || p.inline_data.mimeType,
+          data: p.inline_data.data,
+        },
+      };
+    }
+    if (p.inlineData) {
+      return {
+        inlineData: {
+          mimeType: p.inlineData.mime_type || p.inlineData.mimeType,
+          data: p.inlineData.data,
+        },
+      };
+    }
+    return p;
+  });
+
   const body = {
-    contents: [{ role: "user", parts }],
+    contents: [{ role: "user", parts: normalizedParts }],
     ...(systemInstruction
       ? { systemInstruction: { parts: [{ text: systemInstruction }] } }
       : {}),
@@ -114,11 +152,11 @@ async function tryGroq({ systemInstruction, parts, jsonMode, onChunk }) {
 
   const vision = hasVision(parts);
   const model = vision
-    ? (process.env.GROQ_VISION_MODEL || "llama-3.2-11b-vision-preview")
+    ? (process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b")
     : (process.env.GROQ_MODEL || "llama-3.3-70b-versatile");
 
   const useStream = !!onChunk && !jsonMode && !vision;
-  const messages = convertPartsToMessages(systemInstruction, parts);
+  const messages = convertPartsToMessages(systemInstruction, parts, jsonMode);
 
   const body = {
     model,
@@ -143,7 +181,8 @@ async function tryGroq({ systemInstruction, parts, jsonMode, onChunk }) {
 
   if (!useStream) {
     const data = await res.json();
-    return data?.choices?.[0]?.message?.content || "";
+    const raw = data?.choices?.[0]?.message?.content || "";
+    return jsonMode ? cleanJsonResponse(raw) : raw;
   }
 
   // Streaming
@@ -183,11 +222,11 @@ async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
 
   const vision = hasVision(parts);
   const model = vision
-    ? (process.env.OPENROUTER_VISION_MODEL || "google/gemini-2.0-flash:free")
-    : (process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct:free");
+    ? (process.env.OPENROUTER_VISION_MODEL || "google/gemini-2.0-flash-001")
+    : (process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct");
 
   const useStream = !!onChunk && !jsonMode;
-  const messages = convertPartsToMessages(systemInstruction, parts);
+  const messages = convertPartsToMessages(systemInstruction, parts, jsonMode);
 
   const body = {
     model,
@@ -214,7 +253,8 @@ async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
 
   if (!useStream) {
     const data = await res.json();
-    return data?.choices?.[0]?.message?.content || "";
+    const raw = data?.choices?.[0]?.message?.content || "";
+    return jsonMode ? cleanJsonResponse(raw) : raw;
   }
 
   // Streaming
