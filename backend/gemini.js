@@ -60,10 +60,16 @@ function convertPartsToMessages(systemInstruction, parts, jsonMode = false) {
 
 // ─── Gemini ───────────────────────────────────────────────────────────────────
 
-function geminiEndpoint(stream = false) {
+const GEMINI_MODELS = [
+  process.env.GEMINI_MODEL || "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-pro"
+];
+
+function geminiEndpoint(model, stream = false) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY is not set");
-  const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
   const method = stream ? "streamGenerateContent" : "generateContent";
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}?key=${key}${stream ? "&alt=sse" : ""}`;
 }
@@ -98,50 +104,71 @@ async function tryGemini({ systemInstruction, parts, jsonMode, onChunk }) {
   };
 
   const useStream = !!onChunk && !jsonMode;
-  const res = await fetch(geminiEndpoint(useStream), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let lastError = null;
 
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data?.error?.message || `Gemini HTTP ${res.status}`);
-  }
+  // Try each model in sequence if a model hits rate limit / quota limit
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await fetch(geminiEndpoint(model, useStream), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
 
-  if (!useStream) {
-    const data = await res.json();
-    return data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-  }
-
-  // Streaming: parse SSE
-  let full = "";
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop(); // keep incomplete line
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const raw = line.slice(6).trim();
-      if (raw === "[DONE]") continue;
-      try {
-        const obj = JSON.parse(raw);
-        const chunk =
-          obj?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-        if (chunk) {
-          full += chunk;
-          onChunk(chunk);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const errMsg = data?.error?.message || `Gemini HTTP ${res.status}`;
+        lastError = new Error(errMsg);
+        if (res.status === 429 || errMsg.toLowerCase().includes("quota") || errMsg.toLowerCase().includes("rate")) {
+          console.warn(`[Gemini] Model ${model} rate/quota limited. Retrying with fallback model...`);
+          continue; // try next model
         }
-      } catch { /* malformed chunk — skip */ }
+        throw lastError;
+      }
+
+      if (!useStream) {
+        const data = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+      }
+
+      // Streaming: parse SSE
+      let full = "";
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep incomplete line
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (raw === "[DONE]") continue;
+          try {
+            const obj = JSON.parse(raw);
+            const chunk =
+              obj?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+            if (chunk) {
+              full += chunk;
+              onChunk(chunk);
+            }
+          } catch { /* malformed chunk — skip */ }
+        }
+      }
+      return full;
+    } catch (err) {
+      lastError = err;
+      if (err.message?.toLowerCase().includes("quota") || err.message?.toLowerCase().includes("rate")) {
+        continue;
+      }
+      throw err;
     }
   }
-  return full;
+
+  throw lastError || new Error("All Gemini models failed");
 }
 
 // ─── Groq ─────────────────────────────────────────────────────────────────────
@@ -222,7 +249,7 @@ async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
 
   const vision = hasVision(parts);
   const model = vision
-    ? (process.env.OPENROUTER_VISION_MODEL || "google/gemini-2.0-flash-001")
+    ? (process.env.OPENROUTER_VISION_MODEL || "google/gemini-flash-1.5")
     : (process.env.OPENROUTER_MODEL || "meta-llama/llama-3.3-70b-instruct");
 
   const useStream = !!onChunk && !jsonMode;
