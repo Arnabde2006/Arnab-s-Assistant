@@ -54,8 +54,11 @@ CREATE TABLE IF NOT EXISTS timetable_slots (
   start_time TEXT NOT NULL,
   end_time TEXT NOT NULL,
   room TEXT NOT NULL DEFAULT '',
+  class_name TEXT NOT NULL DEFAULT '1st Year',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE timetable_slots ADD COLUMN IF NOT EXISTS class_name TEXT NOT NULL DEFAULT '1st Year';
 
 CREATE TABLE IF NOT EXISTS exams (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -398,4 +398,91 @@ async function computeGrades(userId) {
   return { semesters, cgpa, totalCredits: totalCreditsAll };
 }
 
+// ---- Weekly class timetable upload -> parse + auto-add to timetable -------------------
+
+const SUBJECT_COLORS = [
+  "#3968db", "#4fa88a", "#c1554a", "#9b51e0", "#f2994a",
+  "#2d9cdb", "#eb5757", "#27ae60", "#bb6bd9", "#e0a96d"
+];
+
+router.post("/class-timetable", asyncHandler(async (req, res) => {
+  const { fileBase64, mimeType, className } = req.body;
+  if (!fileBase64 || !mimeType) {
+    return res.status(400).json({ error: "fileBase64 and mimeType are required" });
+  }
+
+  const targetClass = (className && className.trim()) ? className.trim() : "1st Year";
+
+  const systemInstruction = `You extract weekly class timetable schedules from a photo, screenshot, or PDF of a college timetable.
+The student is requesting the timetable schedule specifically for class / section: "${targetClass}".
+If the document contains a grid or table with multiple class rows/sections (such as BCA 1A, BCA 1B, BCA 2A, BCA 2B, BCA 3A, etc.), find the row or section for "${targetClass}" (or matching e.g. "2A", "BCA 2A", "${targetClass}") and ONLY extract the slots for that specific class.
+
+Return ONLY a JSON array, no prose, in this exact shape:
+[
+  {
+    "subject": "Name/code of the subject (e.g. PDB, PRC, BT, RH, SS, GG, SHD, Data Structures)",
+    "dayOfWeek": 0, 1, 2, 3, 4, 5, or 6 (0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday. Default to 1-5 (Mon-Fri) or 1-6 (Mon-Sat) if daily routine),
+    "startTime": "HH:MM (24-hour format e.g. 09:30, 10:20, 11:10, 12:00, 13:40, 14:30, 15:20)",
+    "endTime": "HH:MM (24-hour format e.g. 10:20, 11:10, 12:00, 12:50, 14:30, 15:20, 16:10)",
+    "room": "Room or lab details if shown, otherwise empty string"
+  }
+]
+If the image lists time columns (like 9:30AM-10:20AM) and subject codes in cells (like PDB, PRC, BT, RH, SS, GG, SHD), map each non-empty time cell to a slot.
+If no class slots are found for "${targetClass}", extract any visible slots or return [].`;
+
+  const text = await callGemini({
+    systemInstruction,
+    parts: [{ inline_data: { mime_type: mimeType, data: fileBase64 } }, { text: "Extract the weekly class timetable schedule." }],
+    jsonMode: true,
+  });
+
+  let slots;
+  try {
+    slots = safeParseJSON(text);
+  } catch {
+    return res.status(502).json({ error: "Couldn't read the timetable clearly. Try a clearer photo or PDF." });
+  }
+  if (!Array.isArray(slots)) slots = [];
+
+  const pool = getPool();
+
+  const existingSubjRes = await pool.query("SELECT id, LOWER(name) AS name_lower FROM subjects WHERE user_id = $1", [req.userId]);
+  const subjectMap = new Map();
+  for (const s of existingSubjRes.rows) {
+    subjectMap.set(s.name_lower, s.id);
+  }
+
+  const addedSlots = [];
+
+  for (const s of slots) {
+    if (!s.subject || s.dayOfWeek === undefined || !s.startTime || !s.endTime) continue;
+    const day = Number(s.dayOfWeek);
+    if (isNaN(day) || day < 0 || day > 6) continue;
+
+    const subjNameClean = s.subject.trim();
+    const subjLower = subjNameClean.toLowerCase();
+    let subjectId = subjectMap.get(subjLower);
+
+    if (!subjectId) {
+      const color = SUBJECT_COLORS[subjectMap.size % SUBJECT_COLORS.length];
+      const newSubjRes = await pool.query(
+        "INSERT INTO subjects (user_id, name, color) VALUES ($1, $2, $3) RETURNING id",
+        [req.userId, subjNameClean, color]
+      );
+      subjectId = newSubjRes.rows[0].id;
+      subjectMap.set(subjLower, subjectId);
+    }
+
+    const slotResult = await pool.query(
+      `INSERT INTO timetable_slots (user_id, subject_id, day_of_week, start_time, end_time, room, class_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [req.userId, subjectId, day, s.startTime, s.endTime, s.room || "", targetClass]
+    );
+
+    addedSlots.push(slotResult.rows[0]);
+  }
+
+  res.json({ success: true, count: addedSlots.length, slots: addedSlots });
+}));
+
 export default router;

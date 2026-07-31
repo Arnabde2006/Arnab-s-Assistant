@@ -104,6 +104,7 @@ const aiLimiter = rateLimit({
 // Apply tighter rate limiter only to routes that actually use Gemini API
 app.use("/api/ai/chat", aiLimiter);
 app.use("/api/ai/exam-timetable", aiLimiter);
+app.use("/api/ai/class-timetable", aiLimiter);
 app.use("/api/ai/grade-card", aiLimiter);
 app.use("/api/holidays/upload", aiLimiter);
 app.use("/api/finance/upload", aiLimiter);
