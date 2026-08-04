@@ -86,6 +86,54 @@ router.post("/:id/unsettle", asyncHandler(async (req, res) => {
   res.json({ debt: result.rows[0] });
 }));
 
+router.post("/:id/partial-settle", asyncHandler(async (req, res) => {
+  const { paidAmount } = req.body;
+  const numPaid = Number(paidAmount);
+  if (!numPaid || numPaid <= 0) {
+    return res.status(400).json({ error: "paidAmount must be greater than 0" });
+  }
+
+  const pool = getPool();
+  const existing = await pool.query(
+    "SELECT * FROM debts WHERE id = $1 AND user_id = $2",
+    [req.params.id, req.userId]
+  );
+  if (existing.rows.length === 0) return res.status(404).json({ error: "Debt not found" });
+
+  const debt = existing.rows[0];
+  const origAmount = Number(debt.amount);
+
+  if (numPaid >= origAmount) {
+    const result = await pool.query(
+      "UPDATE debts SET settled = true, settled_at = now() WHERE id = $1 AND user_id = $2 RETURNING *",
+      [req.params.id, req.userId]
+    );
+    return res.json({ debt: result.rows[0], message: "Fully settled" });
+  }
+
+  const remaining = origAmount - numPaid;
+
+  const updatedOriginal = await pool.query(
+    "UPDATE debts SET amount = $1 WHERE id = $2 AND user_id = $3 RETURNING *",
+    [remaining, req.params.id, req.userId]
+  );
+
+  const settledNote = debt.note
+    ? `${debt.note} (Partial payment of ₹${numPaid.toLocaleString('en-IN')})`
+    : `Partial payment of ₹${numPaid.toLocaleString('en-IN')}`;
+
+  const settledEntry = await pool.query(
+    `INSERT INTO debts (user_id, person_name, amount, direction, note, date, settled, settled_at)
+     VALUES ($1, $2, $3, $4, $5, $6, true, now()) RETURNING *`,
+    [req.userId, debt.person_name, numPaid, debt.direction, settledNote, debt.date]
+  );
+
+  res.json({
+    remainingDebt: updatedOriginal.rows[0],
+    settledPart: settledEntry.rows[0]
+  });
+}));
+
 router.delete("/:id", asyncHandler(async (req, res) => {
   const pool = getPool();
   await pool.query("DELETE FROM debts WHERE id = $1 AND user_id = $2", [req.params.id, req.userId]);

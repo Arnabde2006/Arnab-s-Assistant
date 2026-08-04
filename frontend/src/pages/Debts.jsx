@@ -33,6 +33,8 @@ export default function Debts() {
   const [activeTab, setActiveTab] = useState("summaries"); // "summaries" | "entries"
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPersonKey, setSelectedPersonKey] = useState(null);
+  const [partialDebt, setPartialDebt] = useState(null);
+  const [partialPaidAmount, setPartialPaidAmount] = useState("");
 
   // Form state for main add form
   const [form, setForm] = useState({ personName: "", amount: "", direction: "owed_to_me", note: "" });
@@ -94,6 +96,17 @@ export default function Debts() {
   async function settleAllForPerson(personEntries) {
     const activeEntries = personEntries.filter((d) => !d.settled);
     await Promise.all(activeEntries.map((d) => api.post(`/debts/${d.id}/settle`)));
+    refresh();
+  }
+
+  async function submitPartialSettle(e) {
+    if (e) e.preventDefault();
+    if (!partialDebt || !partialPaidAmount || Number(partialPaidAmount) <= 0) return;
+    await api.post(`/debts/${partialDebt.id}/partial-settle`, {
+      paidAmount: Number(partialPaidAmount)
+    });
+    setPartialDebt(null);
+    setPartialPaidAmount("");
     refresh();
   }
 
@@ -553,7 +566,17 @@ export default function Debts() {
                   {d.settled ? (
                     <button onClick={() => unsettle(d.id)} className="btn-ghost btn" style={{ fontSize: 11, padding: "5px 8px" }}>Undo</button>
                   ) : (
-                    <button onClick={() => settle(d.id)} className="btn" style={{ fontSize: 11, padding: "5px 8px" }}>Settle</button>
+                    <>
+                      <button
+                        onClick={() => { setPartialDebt(d); setPartialPaidAmount(""); }}
+                        className="btn-ghost btn"
+                        style={{ fontSize: 11, padding: "5px 8px" }}
+                        title="Record partial payment"
+                      >
+                        Partial
+                      </button>
+                      <button onClick={() => settle(d.id)} className="btn" style={{ fontSize: 11, padding: "5px 8px" }}>Settle</button>
+                    </>
                   )}
                   <button onClick={() => removeDebt(d.id)} className="btn-ghost btn" style={{ fontSize: 11, padding: "5px 8px" }}>Delete</button>
                 </div>
@@ -838,9 +861,19 @@ export default function Debts() {
                           <RotateCcw size={12} />
                         </button>
                       ) : (
-                        <button onClick={() => settle(d.id)} className="btn" style={{ fontSize: 10, padding: "4px 6px" }}>
-                          <Check size={12} />
-                        </button>
+                        <>
+                          <button
+                            onClick={() => { setPartialDebt(d); setPartialPaidAmount(""); }}
+                            className="btn-ghost btn"
+                            style={{ fontSize: 10, padding: "4px 6px" }}
+                            title="Partial Settle"
+                          >
+                            Part
+                          </button>
+                          <button onClick={() => settle(d.id)} className="btn" style={{ fontSize: 10, padding: "4px 6px" }}>
+                            <Check size={12} />
+                          </button>
+                        </>
                       )}
                       <button onClick={() => removeDebt(d.id)} className="btn-ghost btn" style={{ fontSize: 10, padding: "4px 6px" }}>
                         <Trash2 size={12} />
@@ -850,6 +883,115 @@ export default function Debts() {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* PARTIAL SETTLE MODAL */}
+      {partialDebt && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0, 0, 0, 0.65)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1100,
+            padding: 16
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPartialDebt(null);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: 420,
+              width: "100%",
+              boxShadow: "var(--shadow)",
+              border: "1px solid var(--border-strong)"
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+                Partial Settlement for {partialDebt.person_name}
+              </h3>
+              <button
+                type="button"
+                className="btn-ghost btn"
+                style={{ padding: 4, borderRadius: "50%" }}
+                onClick={() => setPartialDebt(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>
+              Current Entry Amount: <strong style={{ color: "var(--text)" }}>{rupees(partialDebt.amount)}</strong>
+              {partialDebt.note && <span> · ({partialDebt.note})</span>}
+            </div>
+
+            <form onSubmit={submitPartialSettle}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, display: "block", marginBottom: 6 }}>
+                  Amount Paid Now (₹)
+                </label>
+                <input
+                  className="input"
+                  type="number"
+                  min="0.01"
+                  max={partialDebt.amount}
+                  step="0.01"
+                  placeholder={`Enter amount up to ₹${partialDebt.amount}`}
+                  value={partialPaidAmount}
+                  onChange={(e) => setPartialPaidAmount(e.target.value)}
+                  style={{ width: "100%", fontSize: 14 }}
+                  autoFocus
+                  required
+                />
+              </div>
+
+              {Number(partialPaidAmount) > 0 && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    borderRadius: 8,
+                    background: "var(--bg-elevated)",
+                    fontSize: 12,
+                    marginBottom: 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4
+                  }}
+                >
+                  <div>Paid now (Settled entry): <strong style={{ color: "var(--present)" }}>{rupees(partialPaidAmount)}</strong></div>
+                  <div>Remaining Active Debt: <strong style={{ color: "var(--absent)" }}>{rupees(Math.max(0, Number(partialDebt.amount) - Number(partialPaidAmount)))}</strong></div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn-ghost btn"
+                  onClick={() => setPartialDebt(null)}
+                  style={{ fontSize: 13 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn"
+                  style={{ fontSize: 13 }}
+                >
+                  Confirm Partial Payment
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
