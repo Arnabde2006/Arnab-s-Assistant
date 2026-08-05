@@ -129,6 +129,9 @@ export default function Timetable() {
   });
   const [editSubmitting, setEditSubmitting] = useState(false);
 
+  // Delete confirmation state
+  const [confirmingDelete, setConfirmingDelete] = useState(null); // slot or merged slot object
+
   // AI Upload State
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -193,16 +196,23 @@ export default function Timetable() {
   }, []);
 
   // ── Start Editing a Slot ───────────────────────────────────────────────
+  // For merged slots, edit using the first underlying original slot's real _id
   const startEditSlot = (slot) => {
-    setEditingSlot(slot);
+    // Resolve to the real underlying slot (first of the group if merged)
+    const realSlot = slot.isMerged && slot.originalSlots?.length > 0
+      ? slot.originalSlots[0]
+      : slot;
+
+    // Attach isMerged & spanCount metadata so the modal can show a note
+    setEditingSlot({ ...realSlot, _isMergedGroup: slot.isMerged, _spanCount: slot.spanCount });
     setEditForm({
-      subjectId: slot.subject?._id || "",
-      subjectName: slot.subject?.name || "",
-      dayOfWeek: slot.dayOfWeek,
-      startTime: slot.startTime || "09:30",
-      endTime: slot.endTime || "10:20",
-      room: slot.room || "",
-      className: slot.className || selectedClass || "BCA 2A",
+      subjectId: realSlot.subject?._id || "",
+      subjectName: realSlot.subject?.name || "",
+      dayOfWeek: realSlot.dayOfWeek,
+      startTime: realSlot.startTime || "09:30",
+      endTime: realSlot.endTime || "10:20",
+      room: realSlot.room || "",
+      className: realSlot.className || selectedClass || "BCA 2A",
     });
   };
 
@@ -227,6 +237,17 @@ export default function Timetable() {
     } finally {
       setEditSubmitting(false);
     }
+  };
+
+  // ── Delete with confirmation ───────────────────────────────────────────
+  const requestDeleteSlot = (slotOrMerged) => {
+    setConfirmingDelete(slotOrMerged);
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmingDelete) return;
+    await removeSlot(confirmingDelete);
+    setConfirmingDelete(null);
   };
 
   // ── AI Timetable Extractor ──────────────────────────────────────────────
@@ -760,7 +781,7 @@ export default function Timetable() {
                           showClassTag={showClassTag}
                           selectedClass={selectedClass}
                           onEdit={startEditSlot}
-                          onRemove={removeSlot}
+                          onRemove={requestDeleteSlot}
                         />
                       ))}
                     </div>
@@ -861,7 +882,7 @@ export default function Timetable() {
                             showClassTag={showClassTag}
                             selectedClass={selectedClass}
                             onEdit={startEditSlot}
-                            onRemove={() => removeSlot(mergedSlot)}
+                            onRemove={() => requestDeleteSlot(mergedSlot)}
                           />
                         </td>
                       );
@@ -1003,15 +1024,19 @@ export default function Timetable() {
                               type="button"
                               onClick={() => startEditSlot(s)}
                               title="Edit class slot"
-                              style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}
+                              style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, borderRadius: 4, transition: "color 0.15s" }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = activeTheme.accent; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
                             >
                               <Pencil size={14} />
                             </button>
                             <button
                               type="button"
-                              onClick={() => removeSlot(s)}
+                              onClick={() => requestDeleteSlot(s)}
                               title="Remove class slot"
-                              style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}
+                              style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, borderRadius: 4, transition: "color 0.15s" }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--absent)"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -1067,6 +1092,25 @@ export default function Timetable() {
                 <X size={18} />
               </button>
             </div>
+
+            {editingSlot._isMergedGroup && editingSlot._spanCount > 1 && (
+              <div style={{
+                padding: "8px 12px",
+                marginBottom: 14,
+                borderRadius: "var(--radius-sm)",
+                background: "var(--accent-soft)",
+                border: `1px solid ${activeTheme.accent}`,
+                fontSize: 12,
+                color: activeTheme.accent,
+                fontWeight: 600,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}>
+                <Pencil size={13} />
+                Editing the first period of a {editingSlot._spanCount}-period merged block.
+              </div>
+            )}
 
             <form onSubmit={handleEditSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
@@ -1193,6 +1237,89 @@ export default function Timetable() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── 🗑 DELETE CONFIRMATION MODAL ──────────────────────────────────────── */}
+      {confirmingDelete && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.7)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+          onClick={() => setConfirmingDelete(null)}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 400,
+              padding: 24,
+              borderRadius: "var(--radius-md)",
+              border: "1.5px solid var(--absent)",
+              boxShadow: "0 10px 40px rgba(0,0,0,0.6)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <Trash2 size={20} style={{ color: "var(--absent)", flexShrink: 0 }} />
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Remove Class Slot</h3>
+            </div>
+
+            <p style={{ margin: "0 0 8px 0", fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6 }}>
+              Are you sure you want to remove
+              {" "}
+              <strong style={{ color: "var(--text)" }}>
+                {confirmingDelete.subject?.name || confirmingDelete.subjectName || "this class"}
+              </strong>
+              {" "}on <strong style={{ color: "var(--text)" }}>{DAYS[confirmingDelete.dayOfWeek]}</strong>
+              {" "}({confirmingDelete.startTime} – {confirmingDelete.endTime})?
+            </p>
+
+            {confirmingDelete.isMerged && confirmingDelete.spanCount > 1 && (
+              <p style={{ margin: "0 0 16px 0", fontSize: 12, color: "var(--absent)", fontWeight: 600 }}>
+                ⚠ This will delete all {confirmingDelete.spanCount} merged periods.
+              </p>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setConfirmingDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "var(--radius-sm)",
+                  border: "none",
+                  background: "var(--absent)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Trash2 size={15} />
+                Yes, Remove
+              </button>
+            </div>
           </div>
         </div>
       )}
