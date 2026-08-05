@@ -20,6 +20,7 @@ import {
 import { api } from "../api/client.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
+import { groupConsecutiveSlots } from "../utils/timetableUtils.js";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PRESET_CLASSES = [
@@ -382,8 +383,16 @@ export default function Timetable() {
     refresh();
   }
 
-  async function removeSlot(id) {
-    await api.del(`/timetable/${id}`);
+  async function removeSlot(slotOrId) {
+    const ids = Array.isArray(slotOrId)
+      ? slotOrId
+      : typeof slotOrId === "object" && slotOrId?.originalIds
+      ? slotOrId.originalIds
+      : typeof slotOrId === "object" && slotOrId?._id
+      ? [slotOrId._id]
+      : [slotOrId];
+
+    await Promise.all(ids.map((id) => api.del(`/timetable/${id}`)));
     refresh();
   }
 
@@ -665,9 +674,8 @@ export default function Timetable() {
           >
             {displayDays.map(({ dayName, index: dayIdx }) => {
               const isToday = currentDayIndex === dayIdx;
-              const daySlots = filteredSlots
-                .filter((s) => s.dayOfWeek === dayIdx)
-                .sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+              const daySlotsRaw = filteredSlots.filter((s) => s.dayOfWeek === dayIdx);
+              const daySlots = groupConsecutiveSlots(daySlotsRaw);
 
               return (
                 <div
@@ -811,6 +819,89 @@ export default function Timetable() {
               <tbody>
                 {displayDays.map(({ dayName, index: dayIdx }) => {
                   const isToday = currentDayIndex === dayIdx;
+                  const daySlotsRaw = filteredSlots.filter((s) => s.dayOfWeek === dayIdx);
+                  const dayMergedSlots = groupConsecutiveSlots(daySlotsRaw);
+
+                  const matrixCells = [];
+                  let skipUntilIndex = -1;
+
+                  timePeriods.forEach((tp, tpIdx) => {
+                    if (tpIdx < skipUntilIndex) return;
+
+                    const mergedSlot = dayMergedSlots.find(
+                      (s) => (s.startTime || "").trim() === (tp.startTime || "").trim()
+                    );
+
+                    if (mergedSlot) {
+                      let colSpan = 1;
+                      for (let k = tpIdx + 1; k < timePeriods.length; k++) {
+                        const nextTp = timePeriods[k];
+                        if ((nextTp.startTime || "").trim() < (mergedSlot.endTime || "").trim()) {
+                          colSpan++;
+                        } else {
+                          break;
+                        }
+                      }
+                      skipUntilIndex = tpIdx + colSpan;
+
+                      matrixCells.push(
+                        <td
+                          key={tp.key}
+                          colSpan={colSpan}
+                          style={{
+                            padding: 4,
+                            verticalAlign: "top",
+                          }}
+                        >
+                          <SlotCard
+                            slot={mergedSlot}
+                            activeTheme={activeTheme}
+                            isCompact={true}
+                            showRoom={showRoom}
+                            showClassTag={showClassTag}
+                            selectedClass={selectedClass}
+                            onEdit={startEditSlot}
+                            onRemove={() => removeSlot(mergedSlot)}
+                          />
+                        </td>
+                      );
+                    } else {
+                      const isCovered = dayMergedSlots.some((s) => {
+                        const start = (s.startTime || "").trim();
+                        const end = (s.endTime || "").trim();
+                        return start < (tp.startTime || "").trim() && end > (tp.startTime || "").trim();
+                      });
+
+                      if (!isCovered) {
+                        matrixCells.push(
+                          <td
+                            key={tp.key}
+                            style={{
+                              padding: 4,
+                              verticalAlign: "top",
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: 48,
+                                border: `1px dashed ${activeTheme.border}`,
+                                borderRadius: "var(--radius-sm)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "var(--text-muted)",
+                                fontSize: 12,
+                                opacity: 0.4,
+                              }}
+                            >
+                              —
+                            </div>
+                          </td>
+                        );
+                      }
+                    }
+                  });
+
                   return (
                     <tr key={dayName}>
                       <td
@@ -829,50 +920,7 @@ export default function Timetable() {
                         </div>
                       </td>
 
-                      {timePeriods.map((tp) => {
-                        const slot = filteredSlots.find(
-                          (s) => s.dayOfWeek === dayIdx && s.startTime === tp.startTime && s.endTime === tp.endTime
-                        );
-
-                        return (
-                          <td
-                            key={tp.key}
-                            style={{
-                              padding: 4,
-                              verticalAlign: "top",
-                            }}
-                          >
-                            {slot ? (
-                              <SlotCard
-                                slot={slot}
-                                activeTheme={activeTheme}
-                                isCompact={true}
-                                showRoom={showRoom}
-                                showClassTag={showClassTag}
-                                selectedClass={selectedClass}
-                                onEdit={startEditSlot}
-                                onRemove={removeSlot}
-                              />
-                            ) : (
-                              <div
-                                style={{
-                                  height: 48,
-                                  border: `1px dashed ${activeTheme.border}`,
-                                  borderRadius: "var(--radius-sm)",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  color: "var(--text-muted)",
-                                  fontSize: 12,
-                                  opacity: 0.4,
-                                }}
-                              >
-                                —
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
+                      {matrixCells}
                     </tr>
                   );
                 })}
@@ -886,9 +934,8 @@ export default function Timetable() {
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {displayDays.map(({ dayName, index: dayIdx }) => {
               const isToday = currentDayIndex === dayIdx;
-              const daySlots = filteredSlots
-                .filter((s) => s.dayOfWeek === dayIdx)
-                .sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
+              const daySlotsRaw = filteredSlots.filter((s) => s.dayOfWeek === dayIdx);
+              const daySlots = groupConsecutiveSlots(daySlotsRaw);
 
               return (
                 <div
@@ -934,6 +981,11 @@ export default function Timetable() {
                             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
                               {s.subject?.name}
                             </div>
+                            {s.isMerged && s.spanCount > 1 && (
+                              <span style={{ fontSize: 10, fontWeight: 700, background: "var(--accent-soft)", color: activeTheme.accent, padding: "2px 6px", borderRadius: 4 }}>
+                                {s.spanCount} periods
+                              </span>
+                            )}
                             {showRoom && s.room && (
                               <span style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--panel)", padding: "2px 8px", borderRadius: 4, display: "inline-flex", alignItems: "center", gap: 4 }}>
                                 <MapPin size={12} /> {s.room}
@@ -957,7 +1009,7 @@ export default function Timetable() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => removeSlot(s._id)}
+                              onClick={() => removeSlot(s)}
                               title="Remove class slot"
                               style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}
                             >
@@ -1500,6 +1552,22 @@ function SlotCard({ slot, activeTheme, isCompact, showRoom, showClassTag, select
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+          {slot.isMerged && slot.spanCount > 1 && (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                padding: "2px 5px",
+                borderRadius: 4,
+                background: "var(--accent-soft)",
+                color: activeTheme.accent,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {slot.spanCount} periods
+            </span>
+          )}
+
           {showClassTag && (selectedClass === "All" || slot.className !== selectedClass) && (
             <span
               style={{
@@ -1540,7 +1608,7 @@ function SlotCard({ slot, activeTheme, isCompact, showRoom, showClassTag, select
 
           <button
             type="button"
-            onClick={() => onRemove(slot._id)}
+            onClick={() => onRemove(slot)}
             title="Remove class slot"
             style={{
               background: "transparent",
