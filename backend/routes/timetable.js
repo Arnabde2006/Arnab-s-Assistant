@@ -13,6 +13,7 @@ function toSlotDTO(row) {
     startTime: row.start_time,
     endTime: row.end_time,
     room: row.room,
+    instructor: row.instructor || "",
     className: row.class_name || "1st Year",
     subject: row.subject_id
       ? { _id: row.subject_id, name: row.subject_name, color: row.subject_color }
@@ -34,7 +35,7 @@ router.get("/", asyncHandler(async (req, res) => {
 }));
 
 router.post("/", asyncHandler(async (req, res) => {
-  const { subjectId, subjectName, dayOfWeek, startTime, endTime, room, className } = req.body;
+  const { subjectId, subjectName, dayOfWeek, startTime, endTime, room, instructor, className } = req.body;
   if ((!subjectId && !subjectName) || dayOfWeek === undefined || !startTime || !endTime) {
     return res.status(400).json({ error: "subject, dayOfWeek, startTime and endTime are required" });
   }
@@ -65,9 +66,9 @@ router.post("/", asyncHandler(async (req, res) => {
   const slotClassName = (className && className.trim()) ? className.trim() : "1st Year";
 
   const insertResult = await pool.query(
-    `INSERT INTO timetable_slots (user_id, subject_id, day_of_week, start_time, end_time, room, class_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [req.userId, finalSubjectId, dayOfWeek, startTime, endTime, room || "", slotClassName]
+    `INSERT INTO timetable_slots (user_id, subject_id, day_of_week, start_time, end_time, room, instructor, class_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [req.userId, finalSubjectId, dayOfWeek, startTime, endTime, room || "", instructor || "", slotClassName]
   );
   const result = await pool.query(
     `SELECT t.*, s.name AS subject_name, s.color AS subject_color
@@ -80,7 +81,7 @@ router.post("/", asyncHandler(async (req, res) => {
 
 router.put("/:id", asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { subjectId, subjectName, dayOfWeek, startTime, endTime, room, className } = req.body;
+  const { subjectId, subjectName, dayOfWeek, startTime, endTime, room, instructor, className } = req.body;
 
   const pool = getPool();
   const existingSlot = await pool.query(
@@ -112,9 +113,9 @@ router.put("/:id", asyncHandler(async (req, res) => {
 
   await pool.query(
     `UPDATE timetable_slots 
-     SET subject_id = $1, day_of_week = $2, start_time = $3, end_time = $4, room = $5, class_name = $6
-     WHERE id = $7 AND user_id = $8`,
-    [finalSubjectId, dayOfWeek, startTime, endTime, room || "", slotClassName, id, req.userId]
+     SET subject_id = $1, day_of_week = $2, start_time = $3, end_time = $4, room = $5, instructor = $6, class_name = $7
+     WHERE id = $8 AND user_id = $9`,
+    [finalSubjectId, dayOfWeek, startTime, endTime, room || "", instructor || "", slotClassName, id, req.userId]
   );
 
   const result = await pool.query(

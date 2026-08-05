@@ -16,11 +16,13 @@ import {
   Pencil,
   X,
   Save,
+  GraduationCap,
 } from "lucide-react";
 import { api } from "../api/client.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
 import { groupConsecutiveSlots } from "../utils/timetableUtils.js";
+import { useTheme } from "../context/ThemeContext.jsx";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PRESET_CLASSES = [
@@ -84,6 +86,8 @@ const THEMES = {
 };
 
 export default function Timetable() {
+  const { theme: appTheme } = useTheme();
+  const isLightMode = appTheme === "parchment";
   const [subjects, setSubjects] = useState([]);
   const [slots, setSlots] = useState([]);
   const [selectedClass, setSelectedClass] = useState(() => {
@@ -125,6 +129,7 @@ export default function Timetable() {
     startTime: "09:30",
     endTime: "10:20",
     room: "",
+    instructor: "",
     className: "BCA 2A",
   });
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -147,6 +152,7 @@ export default function Timetable() {
     startTime: "09:30",
     endTime: "10:20",
     room: "",
+    instructor: "",
   });
   const [pageLoading, setPageLoading] = useState(true);
 
@@ -212,6 +218,7 @@ export default function Timetable() {
       startTime: realSlot.startTime || "09:30",
       endTime: realSlot.endTime || "10:20",
       room: realSlot.room || "",
+      instructor: realSlot.instructor || "",
       className: realSlot.className || selectedClass || "BCA 2A",
     });
   };
@@ -228,6 +235,7 @@ export default function Timetable() {
         startTime: editForm.startTime,
         endTime: editForm.endTime,
         room: editForm.room,
+        instructor: editForm.instructor,
         className: editForm.className,
       });
       setEditingSlot(null);
@@ -341,20 +349,79 @@ export default function Timetable() {
     });
   }, [hideWeekends]);
 
-  // Extract unique time periods across all filtered slots (for Matrix view)
+  // Build atomic (non-overlapping) time periods for the Matrix view columns.
+  // Instead of using raw slot startTime–endTime pairs (which causes duplicate/overlapping
+  // headers when some slots are stored as multi-period spans, e.g. "09:30–11:10" for OS Lab
+  // while another slot is "09:30–10:20"), we:
+  //   1. Collect all unique boundary time points from every slot's start and end.
+  //   2. Sort the boundaries.
+  //   3. Build atomic periods from consecutive boundary pairs.
+  //   4. Only include a boundary pair if at least one slot's time range covers it.
+  // This ensures columns like [09:30–10:20, 10:20–11:10] are produced instead of
+  // [09:30–11:10, 09:30–10:20], and a slot spanning 09:30–11:10 will get colSpan=2.
   const timePeriods = useMemo(() => {
-    const periodMap = new Map();
+    const boundarySet = new Set();
     filteredSlots.forEach((s) => {
-      if (s.startTime && s.endTime) {
-        const key = `${s.startTime}-${s.endTime}`;
-        periodMap.set(key, { startTime: s.startTime, endTime: s.endTime, key });
-      }
+      if (s.startTime) boundarySet.add(s.startTime.trim());
+      if (s.endTime) boundarySet.add(s.endTime.trim());
     });
-    return Array.from(periodMap.values()).sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const sortedBoundaries = Array.from(boundarySet).sort();
+
+    const periods = [];
+    for (let i = 0; i < sortedBoundaries.length - 1; i++) {
+      const start = sortedBoundaries[i];
+      const end = sortedBoundaries[i + 1];
+      // Only emit this atomic period if at least one slot covers it
+      const isUsed = filteredSlots.some(
+        (s) =>
+          (s.startTime || "").trim() <= start &&
+          (s.endTime || "").trim() >= end
+      );
+      if (isUsed) {
+        periods.push({ startTime: start, endTime: end, key: `${start}-${end}` });
+      }
+    }
+    return periods;
   }, [filteredSlots]);
 
-  const activeTheme = THEMES[timetableTheme] || THEMES.ink;
+  // When the app is in light (parchment) mode and the user has chosen the
+  // 'ink' timetable theme, the ink theme uses CSS variables that resolve to
+  // semi-transparent blues — invisible on a white background. Swap them for
+  // solid light-friendly equivalents. Other timetable themes (cyberpunk,
+  // pastel, gold, minimal) use explicit hex values and look fine in any mode.
+  const rawTheme = THEMES[timetableTheme] || THEMES.ink;
+  const activeTheme = (isLightMode && timetableTheme === "ink")
+    ? {
+        ...rawTheme,
+        bg: "rgba(248, 250, 255, 0.8)",
+        border: "rgba(20, 23, 42, 0.12)",
+        cardBg: "#ffffff",
+      }
+    : rawTheme;
   const isCompact = density === "compact";
+
+  // On narrow screens (mobile), always render the Columns layout for readability.
+  // The user's saved viewLayout preference is NOT changed — it will be respected
+  // again when they return to a wide screen.
+  const [isMobile, setIsMobile] = React.useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  const effectiveLayout = isMobile ? "columns" : viewLayout;
+
+  // On mobile columns view: rotate displayDays so today appears first,
+  // then the rest in natural order. This way the user immediately sees
+  // today's schedule without scrolling horizontally or hunting for the day.
+  // On desktop the original Mon→Fri (or full week) order is preserved.
+  const activeDays = useMemo(() => {
+    if (!isMobile) return displayDays;
+    const todayIdx = displayDays.findIndex((d) => d.index === currentDayIndex);
+    if (todayIdx <= 0) return displayDays; // today not in list or already first
+    return [...displayDays.slice(todayIdx), ...displayDays.slice(0, todayIdx)];
+  }, [isMobile, displayDays, currentDayIndex]);
 
   if (pageLoading) {
     return (
@@ -399,6 +466,7 @@ export default function Timetable() {
       startTime: form.startTime,
       endTime: form.endTime,
       room: form.room,
+      instructor: form.instructor,
       className: form.className,
     });
     refresh();
@@ -684,7 +752,7 @@ export default function Timetable() {
         }}
       >
         {/* VIEW LAYOUT 1: Day Columns (Grid) */}
-        {viewLayout === "columns" && (
+        {effectiveLayout === "columns" && (
           <div
             className="grid timetable-grid"
             style={{
@@ -693,7 +761,7 @@ export default function Timetable() {
               alignItems: "stretch",
             }}
           >
-            {displayDays.map(({ dayName, index: dayIdx }) => {
+            {activeDays.map(({ dayName, index: dayIdx }) => {
               const isToday = currentDayIndex === dayIdx;
               const daySlotsRaw = filteredSlots.filter((s) => s.dayOfWeek === dayIdx);
               const daySlots = groupConsecutiveSlots(daySlotsRaw);
@@ -793,7 +861,7 @@ export default function Timetable() {
         )}
 
         {/* VIEW LAYOUT 2: Routine Matrix (Official College Time-Period × Day Table Format) */}
-        {viewLayout === "matrix" && (
+        {effectiveLayout === "matrix" && (
           <div
             className="custom-scrollbar"
             style={{
@@ -838,7 +906,7 @@ export default function Timetable() {
                 </tr>
               </thead>
               <tbody>
-                {displayDays.map(({ dayName, index: dayIdx }) => {
+                {activeDays.map(({ dayName, index: dayIdx }) => {
                   const isToday = currentDayIndex === dayIdx;
                   const daySlotsRaw = filteredSlots.filter((s) => s.dayOfWeek === dayIdx);
                   const dayMergedSlots = groupConsecutiveSlots(daySlotsRaw);
@@ -951,9 +1019,9 @@ export default function Timetable() {
         )}
 
         {/* VIEW LAYOUT 3: Agenda Timeline View */}
-        {viewLayout === "agenda" && (
+        {effectiveLayout === "agenda" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {displayDays.map(({ dayName, index: dayIdx }) => {
+            {activeDays.map(({ dayName, index: dayIdx }) => {
               const isToday = currentDayIndex === dayIdx;
               const daySlotsRaw = filteredSlots.filter((s) => s.dayOfWeek === dayIdx);
               const daySlots = groupConsecutiveSlots(daySlotsRaw);
@@ -999,7 +1067,19 @@ export default function Timetable() {
                               <Clock size={13} />
                               <span>{s.startTime} – {s.endTime}</span>
                             </div>
-                            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
+                            <div
+                              title={s.subject?.name}
+                              style={{
+                                fontSize: 15,
+                                fontWeight: 700,
+                                color: "var(--text)",
+                                overflow: "hidden",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 1,
+                                WebkitBoxOrient: "vertical",
+                                maxWidth: 220,
+                              }}
+                            >
                               {s.subject?.name}
                             </div>
                             {s.isMerged && s.spanCount > 1 && (
@@ -1215,6 +1295,17 @@ export default function Timetable() {
                   placeholder="e.g. Room 302 / Lab 1"
                   value={editForm.room}
                   onChange={(e) => setEditForm({ ...editForm, room: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="label">Teacher / Instructor (Optional)</label>
+                <input
+                  className="input"
+                  style={{ width: "100%" }}
+                  placeholder="e.g. Prof. Sharma"
+                  value={editForm.instructor}
+                  onChange={(e) => setEditForm({ ...editForm, instructor: e.target.value })}
                 />
               </div>
 
@@ -1634,6 +1725,11 @@ export default function Timetable() {
             <input className="input" placeholder="Optional" value={form.room} onChange={(e) => setForm({ ...form, room: e.target.value })} />
           </div>
 
+          <div>
+            <label className="label">Teacher</label>
+            <input className="input" placeholder="Optional" value={form.instructor} onChange={(e) => setForm({ ...form, instructor: e.target.value })} />
+          </div>
+
           <button className="btn" type="submit" style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <Plus size={15} /> Add Class Slot
           </button>
@@ -1667,12 +1763,18 @@ function SlotCard({ slot, activeTheme, isCompact, showRoom, showClassTag, select
         }}
       >
         <div
+          title={slot.subject?.name}
           style={{
-            fontSize: isCompact ? 13 : 14,
+            fontSize: isCompact ? 12 : 14,
             fontWeight: 700,
             color: "var(--text)",
-            lineHeight: 1.2,
-            wordBreak: "break-word",
+            lineHeight: 1.25,
+            // Clamp to 1 line in compact/matrix view, 2 lines in comfortable/columns view
+            display: "-webkit-box",
+            WebkitLineClamp: isCompact ? 1 : 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            minWidth: 0,
           }}
         >
           {slot.subject?.name}
@@ -1785,6 +1887,23 @@ function SlotCard({ slot, activeTheme, isCompact, showRoom, showClassTag, select
         >
           <MapPin size={11} style={{ opacity: 0.8 }} />
           <span>{slot.room}</span>
+        </div>
+      )}
+
+      {slot.instructor && (
+        <div
+          style={{
+            fontSize: isCompact ? 10 : 11,
+            color: "var(--text-muted)",
+            fontWeight: 500,
+            marginTop: 2,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <GraduationCap size={11} style={{ opacity: 0.8 }} />
+          <span>{slot.instructor}</span>
         </div>
       )}
     </div>
