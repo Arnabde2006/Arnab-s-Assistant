@@ -257,7 +257,13 @@ export default function Attendance() {
               <button
                 type="button"
                 className="btn"
-                style={{ fontSize: 12, padding: "4px 10px", background: selectedDate === today ? "var(--accent-soft)" : "transparent", borderColor: selectedDate === today ? "var(--accent)" : "var(--border)" }}
+                style={{
+                  fontSize: 12,
+                  padding: "4px 12px",
+                  background: selectedDate === today ? "var(--accent)" : "var(--bg-elevated)",
+                  color: selectedDate === today ? "#ffffff" : "var(--text)",
+                  border: `1px solid ${selectedDate === today ? "var(--accent)" : "var(--border-strong)"}`,
+                }}
                 onClick={() => setSelectedDate(today)}
               >
                 Today
@@ -265,7 +271,13 @@ export default function Attendance() {
               <button
                 type="button"
                 className="btn"
-                style={{ fontSize: 12, padding: "4px 10px", background: selectedDate === yesterday ? "var(--accent-soft)" : "transparent", borderColor: selectedDate === yesterday ? "var(--accent)" : "var(--border)" }}
+                style={{
+                  fontSize: 12,
+                  padding: "4px 12px",
+                  background: selectedDate === yesterday ? "var(--accent)" : "var(--bg-elevated)",
+                  color: selectedDate === yesterday ? "#ffffff" : "var(--text)",
+                  border: `1px solid ${selectedDate === yesterday ? "var(--accent)" : "var(--border-strong)"}`,
+                }}
                 onClick={() => setSelectedDate(yesterday)}
               >
                 Yesterday
