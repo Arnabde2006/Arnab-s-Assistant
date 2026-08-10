@@ -93,11 +93,12 @@ export default function Sidebar() {
         <ThemeToggle isCollapsed={isCollapsed} />
         {user && (
           <button
-            className="btn-ghost btn"
+            className="btn-ghost"
             onClick={logout}
             title={isCollapsed ? `Log out (${user.name})` : "Log out"}
             style={{
               fontSize: 13,
+              fontWeight: 500,
               padding: isCollapsed ? "0" : "8px 16px",
               width: isCollapsed ? "44px" : "auto",
               height: isCollapsed ? "44px" : "auto",
@@ -105,10 +106,13 @@ export default function Sidebar() {
               margin: isCollapsed ? "0 auto" : "",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center"
+              justifyContent: "center",
+              gap: 8,
+              cursor: "pointer",
             }}
           >
-            {isCollapsed ? <LogOut size={18} /> : `Log out (${user.name.split(" ")[0]})`}
+            <LogOut size={16} />
+            {!isCollapsed && <span>Log out ({user.name.split(" ")[0]})</span>}
           </button>
         )}
       </div>

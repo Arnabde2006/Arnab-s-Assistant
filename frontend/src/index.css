@@ -181,13 +181,29 @@ body {
   color: #ff5c39;
 }
 
+.sidebar .btn-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  transition: all 0.2s ease;
+}
+
+.sidebar .btn-ghost:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
 [data-theme="parchment"] .sidebar .btn-ghost {
+  background: transparent;
   border-color: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 [data-theme="parchment"] .sidebar .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
 }
 
 a {
