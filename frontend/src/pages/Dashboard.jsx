@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import AttendanceRing from "../components/AttendanceRing.jsx";
@@ -149,9 +150,9 @@ export default function Dashboard() {
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div className="label">Subscriptions &amp; Free Trials</div>
-            <a href="/subscriptions" style={{ fontSize: 12, color: "var(--primary-color)", fontWeight: 600, textDecoration: "none" }}>
+            <Link to="/subscriptions" style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>
               Manage Subscriptions →
-            </a>
+            </Link>
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             {subscriptions.map((s) => {
@@ -164,8 +165,8 @@ export default function Dashboard() {
                   style={{
                     padding: "8px 14px",
                     borderRadius: 8,
-                    background: isUrgent ? "rgba(234, 179, 8, 0.12)" : "var(--bg-elevated)",
-                    border: isUrgent ? "1px solid var(--warning)" : "1px solid var(--border-color)",
+                    background: isUrgent ? "rgba(193, 85, 74, 0.12)" : "var(--bg-elevated)",
+                    border: isUrgent ? "1px solid var(--urgent)" : "1px solid var(--border)",
                     fontSize: 13,
                     display: "flex",
                     alignItems: "center",
@@ -180,7 +181,7 @@ export default function Dashboard() {
                     style={{
                       fontSize: 11,
                       fontWeight: 700,
-                      color: isUrgent ? "var(--warning)" : "var(--primary-color)",
+                      color: isUrgent ? "var(--urgent)" : "var(--accent)",
                     }}
                   >
                     {daysLeft < 0
