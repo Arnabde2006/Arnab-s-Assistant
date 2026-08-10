@@ -83,7 +83,28 @@ export function slotsCanMerge(s1, s2) {
 }
 
 /**
+ * Checks if two slots are exact duplicates (same day, same start/end time, same subject, same class).
+ */
+export function isExactDuplicate(s1, s2) {
+  if (!s1 || !s2) return false;
+  if (s1.dayOfWeek !== s2.dayOfWeek) return false;
+  if ((s1.startTime || "").trim() !== (s2.startTime || "").trim()) return false;
+  if ((s1.endTime || "").trim() !== (s2.endTime || "").trim()) return false;
+
+  const class1 = (s1.className || "").trim().toLowerCase();
+  const class2 = (s2.className || "").trim().toLowerCase();
+  if (class1 !== class2) return false;
+
+  const name1 = (s1.subject?.name || s1.subjectName || "").trim().toLowerCase();
+  const name2 = (s2.subject?.name || s2.subjectName || "").trim().toLowerCase();
+  if (name1 !== name2) return false;
+
+  return true;
+}
+
+/**
  * Groups consecutive identical periods in a list of slots into merged blocks.
+ * Also deduplicates exact duplicate entries from accidental double imports.
  * @param {Array} slots List of slot objects
  * @returns {Array} List of merged slot objects
  */
@@ -92,8 +113,24 @@ export function groupConsecutiveSlots(slots) {
     return [];
   }
 
-  // Sort slots by startTime
-  const sorted = [...slots].sort((a, b) =>
+  // 1. Remove exact duplicate slots (same day, start/end time, subject, class)
+  const uniqueSlots = [];
+  for (const s of slots) {
+    const existing = uniqueSlots.find((u) => isExactDuplicate(u, s));
+    if (existing) {
+      if (!existing.originalIds) {
+        existing.originalIds = [existing._id];
+      }
+      if (!existing.originalIds.includes(s._id)) {
+        existing.originalIds.push(s._id);
+      }
+    } else {
+      uniqueSlots.push({ ...s, originalIds: [s._id] });
+    }
+  }
+
+  // 2. Sort slots by startTime
+  const sorted = uniqueSlots.sort((a, b) =>
     (a.startTime || "").localeCompare(b.startTime || "")
   );
 
@@ -126,11 +163,11 @@ export function groupConsecutiveSlots(slots) {
  * @param {Array} group Array of 1 or more consecutive slot objects
  * @returns {Object}
  */
-
 function createMergedSlotBlock(group) {
   const first = group[0];
   const last = group[group.length - 1];
   const isMerged = group.length > 1;
+  const allOriginalIds = group.flatMap((s) => s.originalIds || [s._id]);
 
   return {
     ...first,
@@ -140,6 +177,6 @@ function createMergedSlotBlock(group) {
     isMerged,
     spanCount: group.length,
     originalSlots: group,
-    originalIds: group.map((s) => s._id),
+    originalIds: Array.from(new Set(allOriginalIds)),
   };
 }
