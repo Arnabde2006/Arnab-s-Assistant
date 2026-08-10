@@ -32,7 +32,8 @@ export default function Attendance() {
   const [pageLoading, setPageLoading] = useState(true);
   const [uploadError, setUploadError] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
-  const today = toISO(new Date());
+  const [selectedDate, setSelectedDate] = useState(today);
+  const yesterday = toISO(new Date(Date.now() - 86400000));
 
   async function refresh() {
     try {
@@ -118,6 +119,16 @@ export default function Attendance() {
     refresh();
   }
 
+  async function clearMark(entry) {
+    if (!entry || !entry.type || !entry.rawId) return;
+    if (entry.type === "att") {
+      await api.delete(`/attendance/${entry.rawId}`);
+    } else if (entry.type === "hol") {
+      await api.delete(`/holidays/${entry.rawId}`);
+    }
+    refresh();
+  }
+
   async function uploadHolidayList(e) {
     e.preventDefault();
     if (!holidayFile) {
@@ -140,15 +151,30 @@ export default function Attendance() {
     }
   }
 
-  // Merge attendance records + holidays into one list of "days with a status", newest first.
-  const holidaySet = new Map(holidays.map((h) => [h.date, h]));
-  const merged = [
-    ...records.map((r) => ({ date: r.date, key: r.status, id: `att-${r.id}` })),
-    ...holidays.map((h) => ({ date: h.date, key: "no_college", id: `hol-${h.id}`, reason: h.reason })),
-  ].sort((a, b) => (a.date < b.date ? 1 : -1));
+  // Build lookup map for attendance and holidays by date string
+  const mergedMap = new Map();
+  records.forEach((r) => mergedMap.set(r.date, { key: r.status, id: r.id, type: "att" }));
+  holidays.forEach((h) => mergedMap.set(h.date, { key: "no_college", id: h.id, type: "hol", reason: h.reason }));
 
-  const todayEntry = merged.find((r) => r.date === today);
-  const recent = merged.slice(0, 14);
+  // Generate the last 14 consecutive calendar days, highlighting unmarked days
+  const past14Days = [];
+  const curr = new Date();
+  for (let i = 0; i < 14; i++) {
+    const dStr = toISO(curr);
+    const entry = mergedMap.get(dStr);
+    past14Days.push({
+      date: dStr,
+      isToday: dStr === today,
+      key: entry ? entry.key : null,
+      id: entry ? `${entry.type}-${entry.id}` : `unmarked-${dStr}`,
+      rawId: entry?.id,
+      type: entry?.type,
+      reason: entry?.reason,
+    });
+    curr.setDate(curr.getDate() - 1);
+  }
+
+  const selectedEntry = mergedMap.get(selectedDate);
 
   return (
     <div>
@@ -219,24 +245,80 @@ export default function Attendance() {
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
         <div className="card">
-          <div className="label" style={{ marginBottom: 12 }}>Today — {formatNice(today)}</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+            <div className="label">
+              Log day — {formatNice(selectedDate)}
+              {selectedDate === today && <span style={{ color: "var(--accent)", marginLeft: 6 }}>(Today)</span>}
+              {selectedDate === yesterday && <span style={{ color: "var(--text-muted)", marginLeft: 6 }}>(Yesterday)</span>}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button
+                type="button"
+                className="btn"
+                style={{ fontSize: 12, padding: "4px 10px", background: selectedDate === today ? "var(--accent-soft)" : "transparent", borderColor: selectedDate === today ? "var(--accent)" : "var(--border)" }}
+                onClick={() => setSelectedDate(today)}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className="btn"
+                style={{ fontSize: 12, padding: "4px 10px", background: selectedDate === yesterday ? "var(--accent-soft)" : "transparent", borderColor: selectedDate === yesterday ? "var(--accent)" : "var(--border)" }}
+                onClick={() => setSelectedDate(yesterday)}
+              >
+                Yesterday
+              </button>
+              <input
+                type="date"
+                value={selectedDate}
+                max={today}
+                onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                style={{
+                  fontSize: 12,
+                  padding: "3px 8px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border-strong)",
+                  background: "var(--bg-elevated)",
+                  color: "var(--text)",
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                }}
+              />
+            </div>
+          </div>
+
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {Object.entries(STATUS_META).map(([key, meta]) => (
               <button
                 key={key}
                 className="btn"
                 style={{
-                  background: todayEntry?.key === key ? meta.color : "var(--bg-elevated)",
-                  color: todayEntry?.key === key ? "var(--accent-text)" : "var(--text)",
-                  border: `1px solid ${todayEntry?.key === key ? meta.color : "var(--border-strong)"}`,
+                  background: selectedEntry?.key === key ? meta.color : "var(--bg-elevated)",
+                  color: selectedEntry?.key === key ? "var(--accent-text)" : "var(--text)",
+                  border: `1px solid ${selectedEntry?.key === key ? meta.color : "var(--border-strong)"}`,
                 }}
-                onClick={() => mark(today, key)}
+                onClick={() => mark(selectedDate, key)}
               >
                 {meta.label}
               </button>
             ))}
           </div>
-          {!todayEntry && <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 12 }}>Not marked yet.</p>}
+
+          {selectedEntry ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
+              <span>Marked as: <strong>{STATUS_META[selectedEntry.key]?.label || selectedEntry.key}</strong></span>
+              <button
+                type="button"
+                style={{ border: "none", background: "none", color: "var(--absent)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}
+                onClick={() => clearMark(selectedEntry)}
+              >
+                Clear mark
+              </button>
+            </div>
+          ) : (
+            <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 12 }}>Not marked yet.</p>
+          )}
         </div>
 
         <form onSubmit={uploadHolidayList} className="card">
@@ -266,16 +348,24 @@ export default function Attendance() {
       </div>
 
       <div className="card">
-        <div className="label" style={{ marginBottom: 12 }}>Recent days</div>
-        {recent.length === 0 && <div className="empty-state">No attendance marked yet.</div>}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div className="label">Recent 14 days</div>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Click any status to set or change past attendance</span>
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {recent.map((r) => (
-            <div key={r.id} className="day-status-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: 8, background: "var(--bg-elevated)" }}>
-              <span style={{ fontSize: 13 }}>
-                {formatNice(r.date)}
+          {past14Days.map((r) => (
+            <div key={r.id} className="day-status-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 10px", borderRadius: 8, background: "var(--bg-elevated)", opacity: r.key ? 1 : 0.85 }}>
+              <span style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+                <strong>{formatNice(r.date)}</strong>
+                {r.isToday && <span style={{ fontSize: 11, color: "var(--accent)" }}>(Today)</span>}
+                {!r.key && (
+                  <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(193,85,74,0.12)", color: "var(--absent)", border: "1px dashed var(--absent)" }}>
+                    Unmarked
+                  </span>
+                )}
                 {r.key === "no_college" && r.reason && <span style={{ color: "var(--text-muted)" }}> · {r.reason}</span>}
               </span>
-              <span className="status-buttons" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <span className="status-buttons" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {Object.entries(STATUS_META).map(([key, meta]) => (
                   <button
                     key={key}
@@ -287,11 +377,31 @@ export default function Attendance() {
                       border: `1px solid ${r.key === key ? meta.color : "var(--border)"}`,
                       background: r.key === key ? meta.color : "transparent",
                       color: r.key === key ? "var(--accent-text)" : "var(--text-muted)",
+                      cursor: "pointer",
                     }}
                   >
                     {meta.label}
                   </button>
                 ))}
+                {r.key && (
+                  <button
+                    type="button"
+                    title="Clear attendance mark for this day"
+                    onClick={() => clearMark(r)}
+                    style={{
+                      fontSize: 12,
+                      padding: "4px 6px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border)",
+                      background: "transparent",
+                      color: "var(--text-muted)",
+                      cursor: "pointer",
+                      marginLeft: 4,
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
               </span>
             </div>
           ))}
