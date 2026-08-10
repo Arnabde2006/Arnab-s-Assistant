@@ -756,7 +756,7 @@ export default function Timetable() {
           <div
             className="grid timetable-grid"
             style={{
-              gridTemplateColumns: hideWeekends ? "repeat(5, 1fr)" : "repeat(7, 1fr)",
+              gridTemplateColumns: isMobile ? "1fr" : hideWeekends ? "repeat(5, 1fr)" : "repeat(7, 1fr)",
               gap: isCompact ? 8 : 12,
               alignItems: "stretch",
             }}
