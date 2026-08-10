@@ -32,8 +32,9 @@ export default function Attendance() {
   const [pageLoading, setPageLoading] = useState(true);
   const [uploadError, setUploadError] = useState("");
   const [uploadResult, setUploadResult] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(today);
+  const today = toISO(new Date());
   const yesterday = toISO(new Date(Date.now() - 86400000));
+  const [selectedDate, setSelectedDate] = useState(today);
 
   async function refresh() {
     try {
