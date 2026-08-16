@@ -35,6 +35,7 @@ export default function Attendance() {
   const today = toISO(new Date());
   const yesterday = toISO(new Date(Date.now() - 86400000));
   const [selectedDate, setSelectedDate] = useState(today);
+  const [holidayReason, setHolidayReason] = useState("");
 
   async function refresh() {
     try {
@@ -318,9 +319,23 @@ export default function Attendance() {
             ))}
           </div>
 
+          <div style={{ marginTop: 10 }}>
+            <input
+              type="text"
+              className="input"
+              placeholder="Holiday name / reason (optional, e.g. Karam Puja)"
+              value={holidayReason}
+              onChange={(e) => setHolidayReason(e.target.value)}
+              style={{ fontSize: 12, padding: "6px 10px" }}
+            />
+          </div>
+
           {selectedEntry ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
-              <span>Marked as: <strong>{STATUS_META[selectedEntry.key]?.label || selectedEntry.key}</strong></span>
+              <span>
+                Marked as: <strong>{STATUS_META[selectedEntry.key]?.label || selectedEntry.key}</strong>
+                {selectedEntry.reason ? ` (${selectedEntry.reason})` : ""}
+              </span>
               <button
                 type="button"
                 style={{ border: "none", background: "none", color: "var(--absent)", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}
