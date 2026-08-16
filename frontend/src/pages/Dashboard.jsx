@@ -292,19 +292,78 @@ function ChatCard() {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
-    
+
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     escaped = escaped.replace(/`(.*?)`/g, "<code>$1</code>");
-    
-    const lines = escaped.split("\n").map(line => {
+
+    const lines = escaped.split("\n");
+    const result = [];
+    let inTable = false;
+    let tableRows = [];
+
+    function renderTable(rows) {
+      if (!rows.length) return "";
+      const validRows = rows.filter((r) => !/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(r));
+      if (!validRows.length) return "";
+
+      const headerCells = validRows[0]
+        .split("|")
+        .map((c) => c.trim())
+        .filter(Boolean);
+
+      const bodyRows = validRows.slice(1).map((row) =>
+        row
+          .split("|")
+          .map((c) => c.trim())
+          .filter(Boolean)
+      );
+
+      const ths = headerCells
+        .map((h) => `<th style="padding: 6px 12px; border: 1px solid var(--border-strong); background: var(--bg-elevated); font-size: 12px; font-weight: 600; text-align: left;">${h}</th>`)
+        .join("");
+
+      const trs = bodyRows
+        .map(
+          (cols) =>
+            `<tr>${cols.map((c) => `<td style="padding: 6px 12px; border: 1px solid var(--border-strong); font-size: 12px;">${c}</td>`).join("")}</tr>`
+        )
+        .join("");
+
+      return `<div style="overflow-x: auto; margin: 10px 0;"><table style="border-collapse: collapse; width: 100%; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden;"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const trimmed = line.trim();
-      if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
-        return `<li style="margin-left: 16px; margin-bottom: 4px;">${trimmed.substring(2)}</li>`;
+      const isTableLine = trimmed.startsWith("|") || (trimmed.endsWith("|") && trimmed.includes("|"));
+
+      if (isTableLine) {
+        if (!inTable) {
+          inTable = true;
+          tableRows = [];
+        }
+        tableRows.push(trimmed);
+      } else {
+        if (inTable) {
+          const tableHtml = renderTable(tableRows);
+          if (tableHtml) result.push(tableHtml);
+          inTable = false;
+          tableRows = [];
+        }
+        if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+          result.push(`<li style="margin-left: 16px; margin-bottom: 4px;">${trimmed.substring(2)}</li>`);
+        } else {
+          result.push(line);
+        }
       }
-      return line;
-    });
-    
-    return lines.join("<br />");
+    }
+
+    if (inTable) {
+      const tableHtml = renderTable(tableRows);
+      if (tableHtml) result.push(tableHtml);
+    }
+
+    return result.join("<br />").replace(/(<br\s*\/?>\s*)+(<div style="overflow-x: auto;)/gi, "$2").replace(/(<\/div>)\s*(<br\s*\/?>\s*)+/gi, "$1");
   }
 
   return (
