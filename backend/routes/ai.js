@@ -18,7 +18,7 @@ async function processAiChatAction(userId, message) {
 
   const systemInstruction = `You are the intent and action parser for a personal college companion app.
 Today's date is: ${todayStr}.
-Analyze the student's input. If they are requesting an action to create, update, or delete a calendar item, task, exam, subscription, or attendance log, extract the action parameters into JSON.
+Analyze the student's input. If they are requesting an action to create, update, or delete a calendar item, task, exam, subscription, holiday, or attendance log, extract the action parameters into JSON.
 
 Supported actions:
 1. Add To-do / Calendar Event:
@@ -44,6 +44,10 @@ Supported actions:
 6. Mark NPTEL Assignment:
    Input example: "Mark Python week 1 assignment as completed"
    JSON: {"action": "mark_nptel", "week_number": 1, "submitted": true}
+
+7. Mark College Holiday / No-college Day:
+   Input example: "Mark Aug 20 as holiday" or "Mark tomorrow as no college"
+   JSON: {"action": "mark_holiday", "date": "YYYY-MM-DD", "reason": "string"}
 
 If the user message is general conversation or an informational question, return:
 {"action": "none"}
@@ -120,6 +124,18 @@ Return ONLY valid JSON.`;
       );
       return { success: true, type: "nptel", message: `Updated NPTEL Week ${parsed.week_number} assignment submission.` };
     }
+
+    if (parsed.action === "mark_holiday" && parsed.date) {
+      await pool.query("DELETE FROM day_attendance WHERE user_id = $1 AND date = $2", [userId, parsed.date]);
+      await pool.query(
+        `INSERT INTO college_holidays (user_id, date, reason, source)
+         VALUES ($1, $2, $3, 'manual')
+         ON CONFLICT (user_id, date)
+         DO UPDATE SET reason = EXCLUDED.reason`,
+        [userId, parsed.date, parsed.reason || ""]
+      );
+      return { success: true, type: "holiday", message: `Marked ${parsed.date} as a college holiday${parsed.reason ? ` (${parsed.reason})` : ""}.` };
+    }
   } catch (err) {
     console.error("[AI Action Execution Error]:", err);
   }
@@ -139,7 +155,7 @@ router.post("/chat", async (req, res) => {
     // Execute any requested database action first (e.g. adding calendar event / todo / subscription)
     const actionResult = await processAiChatAction(req.userId, message);
 
-    const [attendanceRes, todosRes, examsRes, gradesSummary, financeSummary, subsRes, nptelRes] = await Promise.all([
+    const [attendanceRes, todosRes, examsRes, gradesSummary, financeSummary, subsRes, nptelRes, holidaysRes] = await Promise.all([
       pool.query("SELECT status FROM day_attendance WHERE user_id = $1", [req.userId]),
       pool.query("SELECT text, date, done FROM todos WHERE user_id = $1 AND date >= $2 ORDER BY date ASC LIMIT 20", [req.userId, today]),
       pool.query("SELECT course, exam_date FROM exams WHERE user_id = $1 AND exam_date >= $2 ORDER BY exam_date ASC LIMIT 10", [req.userId, today]),
@@ -147,6 +163,7 @@ router.post("/chat", async (req, res) => {
       computeFinanceSummary(req.userId).catch(() => null),
       pool.query("SELECT name, plan_type, amount, currency, renewal_date, (renewal_date - CURRENT_DATE) as days_left FROM subscriptions WHERE user_id = $1 AND status = 'active' ORDER BY renewal_date ASC", [req.userId]).catch(() => ({ rows: [] })),
       pool.query(`SELECT a.title, a.due_date, a.submitted, c.course_name FROM nptel_assignments a JOIN nptel_courses c ON a.course_id = c.id WHERE a.user_id = $1 AND a.due_date >= $2 AND a.submitted = false ORDER BY a.due_date ASC LIMIT 10`, [req.userId, today]).catch(() => ({ rows: [] })),
+      pool.query("SELECT date, reason FROM college_holidays WHERE user_id = $1 ORDER BY date ASC", [req.userId]).catch(() => ({ rows: [] })),
     ]);
 
     const records = attendanceRes.rows;
@@ -157,6 +174,7 @@ router.post("/chat", async (req, res) => {
 
     const subsList = subsRes.rows || [];
     const nptelList = nptelRes.rows || [];
+    const holidaysList = holidaysRes.rows || [];
 
     const contextLines = [
       `Today's date: ${today}.`,
@@ -173,6 +191,9 @@ router.post("/chat", async (req, res) => {
       examsRes.rows.length
         ? `Upcoming exams: ${examsRes.rows.map((e) => `${e.course} on ${e.exam_date}`).join("; ")}.`
         : "No upcoming exams recorded.",
+      holidaysList.length
+        ? `College holidays / No-college days (${holidaysList.length} total recorded): ${holidaysList.map((h) => `${h.date}${h.reason ? ` (${h.reason})` : ""}`).join("; ")}.`
+        : "No college holidays recorded.",
       gradesSummary.semesters.length
         ? `Grade history: CGPA is ${gradesSummary.cgpa} (${gradesSummary.totalCredits} total credits). Semester breakdown: ${gradesSummary.semesters.map((s) => `Semester ${s.semester} (SGPA ${s.sgpa}): ${s.courses.map((c) => `${c.course} (${c.grade})`).join(", ")}`).join("; ")}.`
         : "No grades have been added to the grade tracker yet.",
@@ -184,7 +205,7 @@ router.post("/chat", async (req, res) => {
         : "No active subscriptions tracked.",
     ].filter(Boolean).join(" ");
 
-    const systemInstruction = `You are the built-in personal assistant for "Arnab's Assistant", a comprehensive personal & college companion app (attendance tracker, to-do & calendar, timetable, subscription & trial reminders, exam schedule, focus timer, grade tracker, finance tracker). Answer the student helpfully and concisely, using the context below when relevant. If asked something outside the app's scope, still answer normally as a helpful general assistant. Keep answers short and conversational, plain text, no markdown headers.
+    const systemInstruction = `You are the built-in personal assistant for "Arnab's Assistant", a comprehensive personal & college companion app (attendance tracker, college holidays calendar, to-do & calendar, timetable, subscription & trial reminders, exam schedule, focus timer, grade tracker, finance tracker). Answer the student helpfully and concisely, using the context below when relevant. If asked something outside the app's scope, still answer normally as a helpful general assistant. Keep answers short and conversational, plain text, no markdown headers.
 
 Context: ${contextLines}`;
 
