@@ -10,6 +10,7 @@ export default function ThemeToggle({ isCollapsed }) {
         className="theme-toggle-btn active"
         onClick={() => setTheme(theme === "ink" ? "parchment" : "ink")}
         title={theme === "ink" ? "Switch to Parchment (light)" : "Switch to Ink (dark)"}
+        aria-label={theme === "ink" ? "Switch to Parchment light theme" : "Switch to Ink dark theme"}
         style={{
           margin: "0 auto",
           width: "44px",

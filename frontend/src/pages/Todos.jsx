@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
+import { useDialog } from "../hooks/useDialog.js";
 import Switch from "../components/Switch.jsx";
 import { CreditCard, Pencil, Check, X } from "lucide-react";
 
@@ -22,6 +24,8 @@ function EditTodoModal({ todo, onSave, onClose }) {
   const [date, setDate] = useState(todo.date);
   const [priority, setPriority] = useState(todo.priority);
   const inputRef = useRef(null);
+  // This component is only mounted while the editor is open, so `open` is always true.
+  const { dialogProps, titleProps } = useDialog(true, onClose);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -36,9 +40,9 @@ function EditTodoModal({ todo, onSave, onClose }) {
 
   return (
     <div className="edit-todo-overlay" onClick={onClose}>
-      <div className="edit-todo-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="edit-todo-modal" onClick={(e) => e.stopPropagation()} {...dialogProps}>
         <div className="edit-todo-header">
-          <span className="edit-todo-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="edit-todo-title" {...titleProps} style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Pencil size={16} style={{ color: "var(--primary-color)" }} /> Edit Event
           </span>
           <button className="edit-todo-close" onClick={onClose} aria-label="Close">
@@ -197,6 +201,12 @@ export default function Todos() {
   }, [todos, activeSubs, nptelAssignments, rangeStart]);
 
   const holidayMap = useMemo(() => new Map(holidays.map((h) => [h.date, h])), [holidays]);
+
+  useLoadAnnounce(
+    pageLoading,
+    "Loading planner",
+    loadError ? "" : `Planner loaded, ${todos.length} item${todos.length === 1 ? "" : "s"}`
+  );
 
   if (pageLoading) {
     return (

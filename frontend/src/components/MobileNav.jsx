@@ -119,9 +119,22 @@ export default function MobileNav() {
         onTouchEnd={handleTouchEnd}
       >
         {/* Swipe-Up Drag Handle Pill */}
+        {/* The only tap target that opens the app grid, so it has to be operable
+            rather than decorative: role + tabIndex + key handling, since a <div>
+            gets none of that on its own. */}
         <div
           className="mobile-nav-drag-handle"
           onClick={() => setIsExpanded(!isExpanded)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setIsExpanded(!isExpanded);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          aria-label="Show all apps and features"
           title="Swipe up or tap for all apps grid"
         />
 
@@ -148,13 +161,15 @@ export default function MobileNav() {
       {/* Expanded Grid Sheet Overlay (Opened by Swipe Up or Drag Handle Tap) */}
       {isExpanded && (
         <>
+          {/* See MobileHeader: decorative dismiss target, real close button below. */}
           <div
             className="mobile-nav-backdrop"
             onClick={() => setIsExpanded(false)}
+            aria-hidden="true"
           />
           <div className="mobile-nav-sheet">
             <div className="mobile-nav-sheet-header">
-              <div className="mobile-nav-sheet-pill" onClick={() => setIsExpanded(false)} />
+              <div className="mobile-nav-sheet-pill" onClick={() => setIsExpanded(false)} aria-hidden="true" />
               <div className="mobile-nav-sheet-title-row">
                 <span className="mobile-nav-sheet-title">All Apps &amp; Features</span>
                 <button

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { api } from "../api/client.js";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
+import { useDialog } from "../hooks/useDialog.js";
 import Switch from "../components/Switch.jsx";
 import {
   Users,
@@ -234,6 +235,12 @@ export default function Debts() {
   );
 
   const selectedPersonData = selectedPersonKey ? personMap[selectedPersonKey] : null;
+
+  // Two dialogs, and the partial-settlement one opens on top of the person detail
+  // one (zIndex 1100 over 1000). useDialog keeps its own stack so Escape closes
+  // only the topmost, rather than collapsing both at once.
+  const personDialog = useDialog(!!selectedPersonData, () => setSelectedPersonKey(null));
+  const partialDialog = useDialog(!!partialDebt, () => setPartialDebt(null));
 
   return (
     <div>
@@ -689,6 +696,7 @@ export default function Debts() {
         >
           <div
             className="card"
+            {...personDialog.dialogProps}
             style={{
               maxWidth: 580,
               width: "100%",
@@ -719,7 +727,7 @@ export default function Debts() {
                   {selectedPersonData.displayName.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+                  <h2 {...personDialog.titleProps} style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
                     {selectedPersonData.displayName}'s Full Summary
                   </h2>
                   <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -732,6 +740,7 @@ export default function Debts() {
                 className="btn-ghost btn"
                 style={{ padding: 6, borderRadius: "50%" }}
                 onClick={() => setSelectedPersonKey(null)}
+                aria-label="Close dialog"
               >
                 <X size={18} />
               </button>
@@ -937,7 +946,7 @@ export default function Debts() {
                         {d.direction === "owed_to_me" ? "+" : "−"}{rupees(d.amount)}
                       </span>
                       {d.settled ? (
-                        <button onClick={() => unsettle(d.id)} className="btn-ghost btn" style={{ fontSize: 10, padding: "4px 6px" }}>
+                        <button onClick={() => unsettle(d.id)} className="btn-ghost btn" aria-label={`Reopen ${rupees(d.amount)} entry`} title="Reopen" style={{ fontSize: 10, padding: "4px 6px" }}>
                           <RotateCcw size={12} />
                         </button>
                       ) : (
@@ -950,12 +959,12 @@ export default function Debts() {
                           >
                             Part
                           </button>
-                          <button onClick={() => settle(d.id)} className="btn" style={{ fontSize: 10, padding: "4px 6px" }}>
+                          <button onClick={() => settle(d.id)} className="btn" aria-label={`Settle ${rupees(d.amount)} in full`} title="Settle in full" style={{ fontSize: 10, padding: "4px 6px" }}>
                             <Check size={12} />
                           </button>
                         </>
                       )}
-                      <button onClick={() => removeDebt(d.id)} className="btn-ghost btn" style={{ fontSize: 10, padding: "4px 6px" }}>
+                      <button onClick={() => removeDebt(d.id)} className="btn-ghost btn" aria-label={`Delete ${rupees(d.amount)} entry`} title="Delete" style={{ fontSize: 10, padding: "4px 6px" }}>
                         <Trash2 size={12} />
                       </button>
                     </div>
@@ -990,6 +999,7 @@ export default function Debts() {
         >
           <div
             className="card"
+            {...partialDialog.dialogProps}
             style={{
               maxWidth: 420,
               width: "100%",
@@ -998,7 +1008,7 @@ export default function Debts() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
+              <h3 {...partialDialog.titleProps} style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
                 Partial Settlement for {partialDebt.person_name}
               </h3>
               <button
@@ -1006,6 +1016,7 @@ export default function Debts() {
                 className="btn-ghost btn"
                 style={{ padding: 4, borderRadius: "50%" }}
                 onClick={() => setPartialDebt(null)}
+                aria-label="Close dialog"
               >
                 <X size={16} />
               </button>

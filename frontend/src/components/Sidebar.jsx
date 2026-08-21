@@ -96,6 +96,10 @@ export default function Sidebar() {
             className="btn-ghost"
             onClick={logout}
             title={isCollapsed ? `Log out (${user.name})` : "Log out"}
+            // Only label it when collapsed. Expanded, the button shows its own text,
+            // and an aria-label would replace that with something slightly different
+            // — leaving voice-control users saying a name they cannot see.
+            aria-label={isCollapsed ? `Log out (${user.name})` : undefined}
             style={{
               fontSize: 13,
               fontWeight: 500,

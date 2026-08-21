@@ -201,7 +201,7 @@ export default function Profile() {
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <label className="label" htmlFor="profile-budget" style={{ marginBottom: 0 }}>Monthly Budget</label>
-                  <Switch checked={budgetEnabled} onChange={(val) => {
+                  <Switch ariaLabel="Enable monthly budget" checked={budgetEnabled} onChange={(val) => {
                     setBudgetEnabled(val);
                     if (val && !monthlyBudget) setMonthlyBudget("");
                   }} />

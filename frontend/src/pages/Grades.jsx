@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
@@ -204,6 +205,8 @@ export default function Grades() {
     });
     if (ok) setData(result);
   }
+
+  useLoadAnnounce(pageLoading, "Loading grades", loadError ? "" : "Grades loaded");
 
   if (pageLoading) return <GradesSkeleton />;
 

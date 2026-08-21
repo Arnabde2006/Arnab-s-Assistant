@@ -455,6 +455,12 @@ button {
   outline: none;
 }
 
+.custom-checkbox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
 .custom-checkbox:hover {
   border-color: var(--accent);
   background: var(--panel-hover);
@@ -754,7 +760,9 @@ select.input {
   flex-shrink: 0;
 }
 
-.todo-item:hover .todo-action-btn {
+.todo-item:hover .todo-action-btn,
+.todo-item:focus-within .todo-action-btn,
+.todo-action-btn:focus-visible {
   opacity: 1;
 }
 
@@ -1292,8 +1300,12 @@ select.input {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -1733,6 +1745,19 @@ select.input {
   background: var(--border-strong);
   outline: none;
   transition: opacity .2s;
+}
+
+.pomo-volume-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.pomo-volume-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.pomo-volume-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .pomo-volume-slider::-webkit-slider-thumb {
@@ -2457,14 +2482,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
   }
 }
 
-/* The global reduced-motion rule only disables `transition`, so the
-   entrance animation has to be turned off here explicitly. */
-@media (prefers-reduced-motion: reduce) {
-  .toast {
-    animation: none;
-  }
-}
-
 /* Keep toasts clear of the fixed bottom nav on mobile (56px + safe area). */
 @media (max-width: 720px) {
   .toast-viewport {
@@ -2525,4 +2542,63 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
 .btn:disabled:active,
 .btn-ghost:disabled:active {
   transform: none;
+}
+
+/* ── Screen-reader-only text ──────────────────────────────────
+   For live regions that announce a change with no textual counterpart on
+   screen (a card moving position, a list finishing loading). Kept out of the
+   layout without display:none, which would hide it from assistive tech too. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Reorder controls ─────────────────────────────────────────
+   The keyboard path for the drag-and-drop lists (subscriptions, NPTEL
+   courses). Sized to sit alongside the existing grip handle without changing
+   the row's height. */
+.reorder-controls {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.reorder-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.reorder-btn:hover:not([aria-disabled="true"]) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reorder-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.reorder-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
 }

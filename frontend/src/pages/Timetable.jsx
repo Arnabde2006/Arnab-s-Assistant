@@ -19,7 +19,9 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
+import { useDialog } from "../hooks/useDialog.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
 import { groupConsecutiveSlots } from "../utils/timetableUtils.js";
@@ -137,6 +139,8 @@ export default function Timetable() {
 
   // Delete confirmation state
   const [confirmingDelete, setConfirmingDelete] = useState(null); // slot or merged slot object
+  const editDialog = useDialog(!!editingSlot, () => setEditingSlot(null));
+  const deleteDialog = useDialog(!!confirmingDelete, () => setConfirmingDelete(null));
 
   // AI Upload State
   const [uploadFile, setUploadFile] = useState(null);
@@ -433,6 +437,12 @@ export default function Timetable() {
     if (todayIdx <= 0) return displayDays; // today not in list or already first
     return [...displayDays.slice(todayIdx), ...displayDays.slice(0, todayIdx)];
   }, [isMobile, displayDays, currentDayIndex]);
+
+  useLoadAnnounce(
+    pageLoading,
+    "Loading timetable",
+    loadError ? "" : `Timetable loaded, ${slots.length} class slot${slots.length === 1 ? "" : "s"}`
+  );
 
   if (pageLoading) {
     return (
@@ -1153,6 +1163,7 @@ export default function Timetable() {
                               type="button"
                               onClick={() => startEditSlot(s)}
                               title="Edit class slot"
+                              aria-label={`Edit ${s.subject} class`}
                               style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, borderRadius: 4, transition: "color 0.15s" }}
                               onMouseEnter={(e) => { e.currentTarget.style.color = activeTheme.accent; }}
                               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
@@ -1163,6 +1174,7 @@ export default function Timetable() {
                               type="button"
                               onClick={() => requestDeleteSlot(s)}
                               title="Remove class slot"
+                              aria-label={`Remove ${s.subject} class`}
                               style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, borderRadius: 4, transition: "color 0.15s" }}
                               onMouseEnter={(e) => { e.currentTarget.style.color = "var(--absent)"; }}
                               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
@@ -1199,6 +1211,7 @@ export default function Timetable() {
         >
           <div
             className="card"
+            {...editDialog.dialogProps}
             style={{
               width: "100%",
               maxWidth: 480,
@@ -1211,11 +1224,12 @@ export default function Timetable() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18, borderBottom: "1px solid var(--border)", paddingBottom: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Pencil size={18} style={{ color: activeTheme.accent }} />
-                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Edit Class Slot</h3>
+                <h3 {...editDialog.titleProps} style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Edit Class Slot</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingSlot(null)}
+                aria-label="Close dialog"
                 style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4 }}
               >
                 <X size={18} />
@@ -1400,6 +1414,7 @@ export default function Timetable() {
         >
           <div
             className="card"
+            {...deleteDialog.dialogProps}
             style={{
               width: "100%",
               maxWidth: 400,
@@ -1412,7 +1427,7 @@ export default function Timetable() {
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
               <Trash2 size={20} style={{ color: "var(--absent)", flexShrink: 0 }} />
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Remove Class Slot</h3>
+              <h3 {...deleteDialog.titleProps} style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Remove Class Slot</h3>
             </div>
 
             <p style={{ margin: "0 0 8px 0", fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6 }}>
@@ -1866,6 +1881,7 @@ function SlotCard({ slot, activeTheme, isCompact, showRoom, showClassTag, select
             type="button"
             onClick={() => onEdit(slot)}
             title="Edit class slot"
+            aria-label={`Edit ${slot.subject} class`}
             style={{
               background: "transparent",
               border: "none",
@@ -1888,6 +1904,7 @@ function SlotCard({ slot, activeTheme, isCompact, showRoom, showClassTag, select
             type="button"
             onClick={() => onRemove(slot)}
             title="Remove class slot"
+            aria-label={`Remove ${slot.subject} class`}
             style={{
               background: "transparent",
               border: "none",
