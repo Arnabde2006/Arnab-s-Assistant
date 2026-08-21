@@ -1,10 +1,12 @@
 import React, { useState } from "react";
 import { Link2, Eye, Copy, Check, RefreshCw, ExternalLink, ShieldCheck, Share2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { useToast } from "../context/ToastContext.jsx";
 import { api } from "../api/client.js";
 
 export default function ViewOnlyLinkCard({ compact = false }) {
   const { user, setUser } = useAuth();
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -30,6 +32,11 @@ export default function ViewOnlyLinkCard({ compact = false }) {
     try {
       const data = await api.post("/auth/view-token/regenerate", {});
       setUser(data.user);
+      toast.success("New view-only link generated. The old one no longer works.");
+    } catch (err) {
+      // Silence here was actively misleading: the user has just been told the
+      // old link will stop working, so they need to know it didn't happen.
+      toast.error(`Couldn't regenerate the link — ${err.message}. Your old link still works.`);
     } finally {
       setLoading(false);
     }

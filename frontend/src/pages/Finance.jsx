@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
 import { api } from "../api/client.js";
+import { useAsyncAction } from "../hooks/useAsyncAction.js";
+import { useToast } from "../context/ToastContext.jsx";
 import { fileToBase64, fileToArrayBuffer } from "../utils/fileToBase64.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import FileUpload from "../components/FileUpload.jsx";
@@ -249,6 +251,12 @@ export default function Finance() {
   const [budgetInput, setBudgetInput] = useState(user?.monthlyBudget ?? "");
   const [budgetSaving, setBudgetSaving] = useState(false);
 
+  const [loadError, setLoadError] = useState("");
+  const { run } = useAsyncAction();
+  // Used directly by the handlers that already own a `disabled` flag, where
+  // run()'s extra re-entrancy guard would only risk a silent no-op.
+  const toast = useToast();
+
   // The summary is month-specific (server aggregates by month); the transaction
   // list is not — it's the full history, filtered to a month client-side below.
   // So switching months only needs to refetch the summary, not re-download every
@@ -273,32 +281,58 @@ export default function Finance() {
 
   // Transactions are fetched once on mount (month-independent)…
   useEffect(() => {
-    refreshTransactions().catch(() => {});
+    // Surface a failed load instead of silently rendering an empty ledger — a
+    // blank page and a ₹0 balance look identical to "you spent nothing".
+    refreshTransactions().catch((err) =>
+      setLoadError(err.message || "Couldn't load your transactions.")
+    );
   }, [refreshTransactions]);
 
   // …while the summary refetches whenever the selected month changes.
   useEffect(() => {
-    refreshSummary(selectedMonth).catch(() => {});
+    refreshSummary(selectedMonth).catch((err) =>
+      setLoadError(err.message || "Couldn't load this month's summary.")
+    );
   }, [selectedMonth, refreshSummary]);
+
+  // Retry both halves — the banner doesn't distinguish which one failed, and
+  // refetching the pair is cheap next to leaving the page half-populated.
+  const retryLoad = useCallback(() => {
+    setLoadError("");
+    Promise.all([refreshTransactions(), refreshSummary(selectedMonth)]).catch((err) =>
+      setLoadError(err.message || "Still couldn't load your finances.")
+    );
+  }, [refreshTransactions, refreshSummary, selectedMonth]);
 
   async function addTransaction(e) {
     e.preventDefault();
     if (!form.amount || Number(form.amount) <= 0) return;
-    await api.post("/finance/transactions", { ...form, amount: Number(form.amount) });
+    const { ok } = await run(
+      () => api.post("/finance/transactions", { ...form, amount: Number(form.amount) }),
+      { errorMessage: "Couldn't add that transaction" }
+    );
+    if (!ok) return;
     setForm((f) => ({ ...f, amount: "", merchant: "", notes: "" }));
-    refresh(selectedMonth);
+    await run(() => refresh(selectedMonth), { errorMessage: "Saved, but the totals may be out of date" });
   }
 
   const updateTransaction = useCallback(async (id, patch) => {
-    await api.put(`/finance/transactions/${id}`, patch);
-    refresh(selectedMonth);
-  }, [refresh, selectedMonth]);
+    const { ok } = await run(() => api.put(`/finance/transactions/${id}`, patch), {
+      errorMessage: "Couldn't save that change",
+    });
+    if (ok) {
+      await run(() => refresh(selectedMonth), { errorMessage: "Saved, but the totals may be out of date" });
+    }
+  }, [run, refresh, selectedMonth]);
 
   const removeTransaction = useCallback(async (id) => {
-    await api.del(`/finance/transactions/${id}`);
+    const { ok } = await run(() => api.del(`/finance/transactions/${id}`), {
+      errorMessage: "Couldn't delete that transaction",
+    });
+    if (!ok) return;
     setSelectedIds((prev) => prev.filter((i) => i !== id));
-    refresh(selectedMonth);
-  }, [refresh, selectedMonth]);
+    await run(() => refresh(selectedMonth), { errorMessage: "Deleted, but the totals may be out of date" });
+  }, [run, refresh, selectedMonth]);
 
   async function uploadStatement(e, providedPassword = null) {
     if (e) e.preventDefault();
@@ -353,13 +387,17 @@ export default function Finance() {
         setFile(null);
         setPendingFile(null);
         setPendingBuffer(null);
-        refresh(selectedMonth);
+        await refresh(selectedMonth).catch((err) =>
+          toast.error(`Saved, but the totals may be out of date — ${err.message}`)
+        );
       } else {
         const fileBase64 = await fileToBase64(targetFile);
         const result = await api.post("/finance/upload", { fileBase64, mimeType: targetFile.type });
         setUploadResult(result);
         setFile(null);
-        refresh(selectedMonth);
+        await refresh(selectedMonth).catch((err) =>
+          toast.error(`Saved, but the totals may be out of date — ${err.message}`)
+        );
       }
     } catch (err) {
       setShowPasswordModal(false);
@@ -376,7 +414,12 @@ export default function Finance() {
       const value = budgetInput === "" ? null : Number(budgetInput);
       const data = await api.put("/auth/me", { monthlyBudget: value });
       setUser(data.user);
-      refresh(selectedMonth);
+      await refresh(selectedMonth).catch((err) =>
+        toast.error(`Saved, but the totals may be out of date — ${err.message}`)
+      );
+      toast.success("Monthly budget updated.");
+    } catch (err) {
+      toast.error(`Couldn't save your budget — ${err.message}`);
     } finally {
       setBudgetSaving(false);
     }
@@ -416,12 +459,19 @@ export default function Finance() {
   async function handleBulkCategoryChange(e) {
     e.preventDefault();
     if (!bulkCategory || selectedIds.length === 0) return;
+    const count = selectedIds.length;
     setBulkUpdating(true);
     try {
       await api.put("/finance/transactions/bulk", { ids: selectedIds, category: bulkCategory });
       setSelectedIds([]);
       setBulkCategory("");
-      refresh(selectedMonth);
+      await refresh(selectedMonth).catch((err) =>
+        toast.error(`Saved, but the totals may be out of date — ${err.message}`)
+      );
+      toast.success(`Recategorised ${count} transaction${count === 1 ? "" : "s"}.`);
+    } catch (err) {
+      // Keep the selection intact so the user can simply retry.
+      toast.error(`Couldn't recategorise those transactions — ${err.message}`);
     } finally {
       setBulkUpdating(false);
     }
@@ -430,11 +480,17 @@ export default function Finance() {
   async function handleBulkDelete() {
     if (selectedIds.length === 0) return;
     if (!window.confirm(`Delete ${selectedIds.length} selected transaction(s)?`)) return;
+    const count = selectedIds.length;
     setBulkUpdating(true);
     try {
       await api.del("/finance/transactions/bulk", { ids: selectedIds });
       setSelectedIds([]);
-      refresh(selectedMonth);
+      await refresh(selectedMonth).catch((err) =>
+        toast.error(`Saved, but the totals may be out of date — ${err.message}`)
+      );
+      toast.success(`Deleted ${count} transaction${count === 1 ? "" : "s"}.`);
+    } catch (err) {
+      toast.error(`Couldn't delete those transactions — ${err.message}`);
     } finally {
       setBulkUpdating(false);
     }
@@ -479,6 +535,15 @@ export default function Finance() {
           )}
         </div>
       </div>
+
+      {loadError && (
+        <div className="load-error" role="alert">
+          <span>{loadError}</span>
+          <button type="button" className="btn btn-sm" onClick={retryLoad}>
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-3" style={{ marginBottom: 20 }}>
         <div className="card">

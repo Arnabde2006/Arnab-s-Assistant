@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import Switch from "../components/Switch.jsx";
 import { CreditCard, Pencil, Check, X } from "lucide-react";
 
@@ -93,6 +94,8 @@ export default function Todos() {
   const [showHolidays, setShowHolidays] = useState(() => localStorage.getItem("showHolidays") !== "false");
   const [pageLoading, setPageLoading] = useState(true);
   const [editingTodo, setEditingTodo] = useState(null); // todo object being edited
+  const [loadError, setLoadError] = useState("");
+  const { run, pending } = useAsyncAction();
 
   useEffect(() => {
     localStorage.setItem("showHolidays", String(showHolidays));
@@ -121,7 +124,8 @@ export default function Todos() {
   }
 
   useEffect(() => {
-    refresh().catch(() => {});
+    // Surface a failed load instead of silently rendering an empty planner.
+    refresh().catch((err) => setLoadError(err.message || "Couldn't load your planner."));
   }, []);
 
   // Active subscriptions mapping by date
@@ -230,26 +234,37 @@ export default function Todos() {
   async function addNote(e) {
     e.preventDefault();
     if (!note.trim()) return;
-    await api.post("/todos", { text: note.trim(), priority });
+    const { ok } = await run(() => api.post("/todos", { text: note.trim(), priority }), {
+      errorMessage: "Couldn't add that task",
+    });
+    if (!ok) return;
     setNote("");
     setPriority("normal");
-    refresh();
+    await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function toggleDone(todo) {
-    await api.put(`/todos/${todo.id}`, { done: !todo.done });
-    refresh();
+    const { ok } = await run(() => api.put(`/todos/${todo.id}`, { done: !todo.done }), {
+      errorMessage: todo.done ? "Couldn't reopen that task" : "Couldn't complete that task",
+    });
+    if (ok) await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function removeTodo(id) {
-    await api.del(`/todos/${id}`);
-    refresh();
+    const { ok } = await run(() => api.del(`/todos/${id}`), {
+      errorMessage: "Couldn't delete that task",
+    });
+    if (ok) await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function saveEdit(id, fields) {
-    await api.put(`/todos/${id}`, fields);
+    const { ok } = await run(() => api.put(`/todos/${id}`, fields), {
+      errorMessage: "Couldn't save those changes",
+    });
+    // Keep the modal open on failure so the user's edits aren't thrown away.
+    if (!ok) return;
     setEditingTodo(null);
-    refresh();
+    await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   return (
@@ -271,6 +286,22 @@ export default function Todos() {
         <Switch checked={showHolidays} onChange={setShowHolidays} label="Show college‑off days" />
       </div>
 
+      {loadError && (
+        <div className="load-error" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setLoadError("");
+              refresh().catch((err) => setLoadError(err.message || "Couldn't load your planner."));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <form onSubmit={addNote} className="card" style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
         <input
           className="input"
@@ -284,7 +315,7 @@ export default function Todos() {
           <option value="normal">Normal</option>
           <option value="urgent">Urgent</option>
         </select>
-        <button className="btn" type="submit">Add</button>
+        <button className="btn" type="submit" disabled={pending}>{pending ? "Adding…" : "Add"}</button>
       </form>
 
       <div className="planner">
@@ -335,8 +366,11 @@ export default function Todos() {
                       className="custom-checkbox"
                       checked={a.submitted}
                       onChange={async () => {
-                        await api.put(`/nptel/assignments/${a.id}`, { submitted: !a.submitted });
-                        refresh();
+                        const { ok } = await run(
+                          () => api.put(`/nptel/assignments/${a.id}`, { submitted: !a.submitted }),
+                          { errorMessage: "Couldn't update that assignment" }
+                        );
+                        if (ok) await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
                       }}
                     />
                     <span style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>

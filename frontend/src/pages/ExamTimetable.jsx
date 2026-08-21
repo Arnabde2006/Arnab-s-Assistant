@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
 
@@ -11,6 +12,8 @@ export default function ExamTimetable() {
   const [error, setError] = useState("");
   const [lastResult, setLastResult] = useState(null);
   const [exams, setExams] = useState([]);
+  const [loadError, setLoadError] = useState("");
+  const { run } = useAsyncAction();
 
   async function refresh() {
     try {
@@ -22,7 +25,9 @@ export default function ExamTimetable() {
   }
 
   useEffect(() => {
-    refresh().catch(() => {});
+    // "No upcoming exams" is a dangerous thing to show when it's really a
+    // failed request, so surface the failure explicitly.
+    refresh().catch((err) => setLoadError(err.message || "Couldn't load your exams."));
   }, []);
 
   if (pageLoading) {
@@ -71,7 +76,7 @@ export default function ExamTimetable() {
         courses,
       });
       setLastResult(data);
-      refresh();
+      await run(refresh, { errorMessage: "Imported, but the list may be out of date" });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -80,8 +85,10 @@ export default function ExamTimetable() {
   }
 
   async function removeExam(id) {
-    await api.del(`/ai/exams/${id}`);
-    refresh();
+    const { ok } = await run(() => api.del(`/ai/exams/${id}`), {
+      errorMessage: "Couldn't remove that exam",
+    });
+    if (ok) await run(refresh, { errorMessage: "Removed, but the list may be out of date" });
   }
 
   return (
@@ -92,6 +99,22 @@ export default function ExamTimetable() {
           <p className="page-subtitle">Upload a photo or PDF — exams are auto-added to your calendar.</p>
         </div>
       </div>
+
+      {loadError && (
+        <div className="load-error" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setLoadError("");
+              refresh().catch((err) => setLoadError(err.message || "Couldn't load your exams."));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleUpload} className="card" style={{ marginBottom: 20 }}>
         <label className="label" htmlFor="courses">Courses you're taking (optional, helps filtering)</label>
