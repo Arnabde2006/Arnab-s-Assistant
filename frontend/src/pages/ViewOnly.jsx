@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import {
   Eye,
   ShieldCheck,
@@ -88,6 +89,10 @@ export default function ViewOnly() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [token]);
+
+  // Stay quiet on completion when the link failed - the error branch below
+  // replaces the whole page, and "loaded" over the top of it would be a lie.
+  useLoadAnnounce(loading, "Loading shared view", error ? "" : "Shared view loaded");
 
   if (loading) {
     return <ViewOnlySkeleton />;

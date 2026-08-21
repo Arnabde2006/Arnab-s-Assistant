@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
@@ -29,6 +30,12 @@ export default function ExamTimetable() {
     // failed request, so surface the failure explicitly.
     refresh().catch((err) => setLoadError(err.message || "Couldn't load your exams."));
   }, []);
+
+  useLoadAnnounce(
+    pageLoading,
+    "Loading exam timetable",
+    loadError ? "" : "Exam timetable loaded"
+  );
 
   if (pageLoading) {
     return (

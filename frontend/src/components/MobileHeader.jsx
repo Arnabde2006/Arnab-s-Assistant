@@ -70,6 +70,8 @@ export default function MobileHeader() {
               className="mobile-header-btn"
               onClick={() => setDrawerOpen(true)}
               title="Open Navigation Menu"
+              aria-label="Open navigation menu"
+              aria-expanded={drawerOpen}
               style={{ flexShrink: 0 }}
             >
               <Menu size={20} />
@@ -103,6 +105,7 @@ export default function MobileHeader() {
             className="mobile-header-btn"
             onClick={() => setTheme(theme === "ink" ? "parchment" : "ink")}
             title={theme === "ink" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            aria-label={theme === "ink" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {theme === "ink" ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -122,6 +125,7 @@ export default function MobileHeader() {
             className="mobile-header-btn mobile-header-logout"
             onClick={logout}
             title="Log out"
+            aria-label="Log out"
           >
             <LogOut size={18} />
           </button>
@@ -131,9 +135,13 @@ export default function MobileHeader() {
       {/* Slide-Out Navigation Drawer */}
       {isHamburgerMode && drawerOpen && (
         <>
+          {/* Dismiss-on-tap convenience only; the drawer has a real labelled
+              close button, so keep this out of the accessibility tree rather than
+              exposing an unnamed clickable region. */}
           <div
             className="mobile-drawer-backdrop"
             onClick={() => setDrawerOpen(false)}
+            aria-hidden="true"
           />
           <aside className="mobile-drawer-sheet">
             <div className="mobile-drawer-header">

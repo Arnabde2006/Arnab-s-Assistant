@@ -1,5 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
+import { useDialog } from "../hooks/useDialog.js";
+import { useToast } from "../context/ToastContext.jsx";
+import ReorderControls from "../components/ReorderControls.jsx";
 import {
   CreditCard,
   Upload,
@@ -61,53 +65,104 @@ export default function Subscriptions() {
   // Multi-subscription preview state
   const [extractedList, setExtractedList] = useState([]);
   const [showMultiModal, setShowMultiModal] = useState(false);
+  const formDialog = useDialog(showModal, () => setShowModal(false));
+  const importDialog = useDialog(showMultiModal, () => setShowMultiModal(false));
   const [savingMulti, setSavingMulti] = useState(false);
+  const toast = useToast();
+  useLoadAnnounce(
+    loading,
+    "Loading subscriptions",
+    `${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"} loaded`
+  );
 
-  // Drag & Drop Subscription Reordering
-  const [draggedSubIndex, setDraggedSubIndex] = useState(null);
-  const [dragOverSubIndex, setDragOverSubIndex] = useState(null);
+  // Filtered List — declared here because the reorder helpers below need it.
+  const filteredSubs = subscriptions.filter((s) => {
+    if (filter === "trials") return s.plan_type === "free_trial" && s.status === "active";
+    if (filter === "active") return s.status === "active";
+    if (filter === "cancelled") return s.status === "cancelled";
+    return true;
+  });
+
+  // Reordering (drag, and now keyboard) ───────────────────────────────────────
+  // Everything below keys off subscription ids rather than array indices. The
+  // cards render `filteredSubs`, which is a subset of `subscriptions` whenever a
+  // filter is active, but the order that gets persisted is the full array — so
+  // the old code, which spliced `subscriptions` at an index into `filteredSubs`,
+  // reordered the wrong subscriptions under any filter but "all".
+  const [draggedSubId, setDraggedSubId] = useState(null);
+  const [dragOverSubId, setDragOverSubId] = useState(null);
+  const [reorderMessage, setReorderMessage] = useState("");
 
   const saveSubOrder = async (updatedSubs) => {
+    const previous = subscriptions;
     setSubscriptions(updatedSubs);
     try {
       const subIds = updatedSubs.map((s) => s.id);
       await api.put("/subscriptions/reorder", { subIds });
     } catch (err) {
-      console.error("Failed to save subscription order:", err);
+      // Undo the optimistic move and say so. Logging this to the console left
+      // the list showing an order the server had rejected until a full reload.
+      setSubscriptions(previous);
+      toast.error("Couldn't save the new order");
     }
   };
 
-  const handleSubDragStart = (e, index) => {
-    setDraggedSubIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", String(index));
-  };
+  // Move `sourceId` into `targetId`'s slot. Whether it lands before or after the
+  // target depends on which way it is travelling in the visible list, so a card
+  // ends up where the user actually dropped it instead of one slot short.
+  const reorderSubs = (sourceId, targetId) => {
+    const visibleFrom = filteredSubs.findIndex((s) => s.id === sourceId);
+    const visibleTo = filteredSubs.findIndex((s) => s.id === targetId);
+    if (visibleFrom === -1 || visibleTo === -1 || visibleFrom === visibleTo) return null;
 
-  const handleSubDragOver = (e, index) => {
-    e.preventDefault();
-    if (draggedSubIndex === null || draggedSubIndex === index) return;
-    setDragOverSubIndex(index);
-  };
-
-  const handleSubDrop = (e, targetIndex) => {
-    e.preventDefault();
-    if (draggedSubIndex === null || draggedSubIndex === targetIndex) {
-      setDraggedSubIndex(null);
-      setDragOverSubIndex(null);
-      return;
-    }
     const updated = [...subscriptions];
-    const [moved] = updated.splice(draggedSubIndex, 1);
-    updated.splice(targetIndex, 0, moved);
+    const from = updated.findIndex((s) => s.id === sourceId);
+    if (from === -1) return null;
+    const [moved] = updated.splice(from, 1);
+    const to = updated.findIndex((s) => s.id === targetId);
+    if (to === -1) return null;
+    updated.splice(visibleTo > visibleFrom ? to + 1 : to, 0, moved);
 
-    setDraggedSubIndex(null);
-    setDragOverSubIndex(null);
     saveSubOrder(updated);
+    return { name: moved.name, position: visibleTo + 1, total: filteredSubs.length };
+  };
+
+  // Keyboard path: step over the neighbouring *visible* card. Stepping by raw
+  // array index would hop a hidden subscription and appear to do nothing.
+  const moveSub = (subId, delta) => {
+    const visibleFrom = filteredSubs.findIndex((s) => s.id === subId);
+    const visibleTo = visibleFrom + delta;
+    if (visibleFrom === -1 || visibleTo < 0 || visibleTo >= filteredSubs.length) return;
+    const moved = reorderSubs(subId, filteredSubs[visibleTo].id);
+    if (moved) {
+      setReorderMessage(`${moved.name} moved to position ${moved.position} of ${moved.total}`);
+    }
+  };
+
+  const handleSubDragStart = (e, subId) => {
+    setDraggedSubId(subId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(subId));
+  };
+
+  const handleSubDragOver = (e, subId) => {
+    e.preventDefault();
+    if (draggedSubId === null || draggedSubId === subId) return;
+    setDragOverSubId(subId);
+  };
+
+  const handleSubDrop = (e, targetId) => {
+    e.preventDefault();
+    const sourceId = draggedSubId;
+    setDraggedSubId(null);
+    setDragOverSubId(null);
+    if (sourceId === null || sourceId === targetId) return;
+    reorderSubs(sourceId, targetId);
   };
 
   const handleSubDragEnd = () => {
-    setDraggedSubIndex(null);
-    setDragOverSubIndex(null);
+    setDraggedSubId(null);
+    setDragOverSubId(null);
   };
 
   async function loadSubscriptions() {
@@ -333,14 +388,6 @@ export default function Subscriptions() {
     return sum + val;
   }, 0);
 
-  // Filtered List
-  const filteredSubs = subscriptions.filter((s) => {
-    if (filter === "trials") return s.plan_type === "free_trial" && s.status === "active";
-    if (filter === "active") return s.status === "active";
-    if (filter === "cancelled") return s.status === "cancelled";
-    return true;
-  });
-
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", paddingBottom: 40 }}>
       {/* Header */}
@@ -412,6 +459,18 @@ export default function Subscriptions() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => !uploading && fileInputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        aria-label="Upload a screenshot to extract subscriptions"
+        aria-disabled={uploading || undefined}
+        onKeyDown={(e) => {
+          // See Nptel: can't be a real <button> (wraps the file input, whole area
+          // is a drop target), and role="button" doesn't bring key activation.
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (!uploading) fileInputRef.current?.click();
+          }
+        }}
         style={{
           border: `2px dashed ${isDragOver ? "var(--accent)" : "var(--border)"}`,
           borderRadius: 14,
@@ -502,6 +561,12 @@ export default function Subscriptions() {
         </div>
       )}
 
+      {/* A card changing position is a purely visual cue, so mirror it in text
+          for screen readers. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {reorderMessage}
+      </div>
+
       {!loading && filteredSubs.length > 0 && (
         <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))" }}>
           {filteredSubs.map((sub, index) => {
@@ -509,17 +574,17 @@ export default function Subscriptions() {
             const isTrial = sub.plan_type === "free_trial";
             const isCancelled = sub.status === "cancelled";
             const isUrgent = !isCancelled && daysLeft >= 0 && daysLeft <= 5;
-            const isDragging = draggedSubIndex === index;
-            const isDragTarget = dragOverSubIndex === index;
+            const isDragging = draggedSubId === sub.id;
+            const isDragTarget = dragOverSubId === sub.id;
 
             return (
               <div
                 key={sub.id}
                 className="card"
                 draggable
-                onDragStart={(e) => handleSubDragStart(e, index)}
-                onDragOver={(e) => handleSubDragOver(e, index)}
-                onDrop={(e) => handleSubDrop(e, index)}
+                onDragStart={(e) => handleSubDragStart(e, sub.id)}
+                onDragOver={(e) => handleSubDragOver(e, sub.id)}
+                onDrop={(e) => handleSubDrop(e, sub.id)}
                 onDragEnd={handleSubDragEnd}
                 style={{
                   display: "flex",
@@ -548,14 +613,27 @@ export default function Subscriptions() {
                           cursor: "grab",
                           display: "inline-flex",
                           alignItems: "center",
-                          justify: "center",
+                          justifyContent: "center",
                           flexShrink: 0,
                           marginTop: 1,
                         }}
                         onClick={(e) => e.stopPropagation()}
+                        aria-hidden="true"
                       >
                         <GripVertical size={18} />
                       </span>
+                      {/* Cards wrap into a responsive grid, so the neighbouring
+                          item may be to the left or on the row above — hence
+                          "earlier/later" rather than "up/down". */}
+                      <ReorderControls
+                        itemName={sub.name}
+                        position={index + 1}
+                        total={filteredSubs.length}
+                        prevLabel="earlier"
+                        nextLabel="later"
+                        onPrev={() => moveSub(sub.id, -1)}
+                        onNext={() => moveSub(sub.id, 1)}
+                      />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <h3 style={{ margin: "0 0 4px 0", fontSize: 17, fontWeight: 700 }}>{sub.name}</h3>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -656,6 +734,7 @@ export default function Subscriptions() {
                       onClick={() => openEditModal(sub)}
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 6 }}
                       title="Edit"
+                      aria-label={`Edit ${sub.name}`}
                     >
                       <Edit2 size={16} />
                     </button>
@@ -663,6 +742,7 @@ export default function Subscriptions() {
                       onClick={() => handleDelete(sub.id)}
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 6 }}
                       title="Delete"
+                      aria-label={`Delete ${sub.name}`}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -693,6 +773,7 @@ export default function Subscriptions() {
         >
           <div
             className="card"
+            {...formDialog.dialogProps}
             style={{
               width: "100%",
               maxWidth: 500,
@@ -703,11 +784,12 @@ export default function Subscriptions() {
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+              <h2 {...formDialog.titleProps} style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
                 {editingSub ? "Edit Subscription" : "Add Subscription"}
               </h2>
               <button
                 onClick={() => setShowModal(false)}
+                aria-label="Close dialog"
                 style={{ background: "none", border: "none", fontSize: 20, color: "var(--text-muted)", cursor: "pointer" }}
               >
                 ✕
@@ -854,15 +936,15 @@ export default function Subscriptions() {
       {/* Multi-Subscription Import Preview Modal */}
       {showMultiModal && (
         <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)" }}>
-          <div className="card" style={{ maxWidth: 540, width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, boxShadow: "var(--shadow)" }}>
+          <div className="card" {...importDialog.dialogProps} style={{ maxWidth: 540, width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, boxShadow: "var(--shadow)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Found {extractedList.length} Subscriptions</h3>
+                <h3 {...importDialog.titleProps} style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Found {extractedList.length} Subscriptions</h3>
                 <p style={{ margin: "4px 0 0 0", fontSize: 12, color: "var(--text-muted)" }}>
                   Select which subscriptions you want to import into your tracker.
                 </p>
               </div>
-              <button className="btn-ghost btn" style={{ padding: "4px 8px" }} onClick={() => setShowMultiModal(false)}>✕</button>
+              <button className="btn-ghost btn" aria-label="Close dialog" style={{ padding: "4px 8px" }} onClick={() => setShowMultiModal(false)}>✕</button>
             </div>
 
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, paddingRight: 4, marginBottom: 16 }}>

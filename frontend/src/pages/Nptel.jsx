@@ -1,5 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
+import { useDialog } from "../hooks/useDialog.js";
+import { useToast } from "../context/ToastContext.jsx";
+import ReorderControls from "../components/ReorderControls.jsx";
 import {
   Award,
   Calendar,
@@ -53,6 +57,8 @@ export default function Nptel() {
   const [editingCourse, setEditingCourse] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM);
   const [formError, setFormError] = useState("");
+  const closeModal = useCallback(() => setShowModal(false), []);
+  const { dialogProps, titleProps } = useDialog(showModal, closeModal);
 
   // Upload / AI states
   const [uploading, setUploading] = useState(false);
@@ -66,17 +72,31 @@ export default function Nptel() {
   // Drag & Drop Course Reordering
   const [draggedCourseIndex, setDraggedCourseIndex] = useState(null);
   const [dragOverCourseIndex, setDragOverCourseIndex] = useState(null);
+  const [reorderMessage, setReorderMessage] = useState("");
+  const toast = useToast();
+  useLoadAnnounce(
+    loading,
+    "Loading NPTEL courses",
+    `${courses.length} NPTEL course${courses.length === 1 ? "" : "s"} loaded`
+  );
 
   const saveCourseOrder = async (updatedCourses) => {
+    const previous = courses;
     setCourses(updatedCourses);
     try {
       const courseIds = updatedCourses.map((c) => c.id);
       await api.put("/nptel/reorder", { courseIds });
     } catch (err) {
-      console.error("Failed to save course order:", err);
+      // Undo the optimistic move and say so. Logging this to the console left
+      // the list showing an order the server had rejected until a full reload.
+      setCourses(previous);
+      toast.error("Couldn't save the new course order");
     }
   };
 
+  // Courses render straight off `courses` (no filtering), so plain index
+  // arithmetic is correct here. Announce the result: the visual cue is the card
+  // sliding, which conveys nothing to a screen reader.
   const handleMoveCourse = (index, direction, e) => {
     if (e) e.stopPropagation();
     const targetIndex = index + direction;
@@ -86,6 +106,9 @@ export default function Nptel() {
     const [moved] = updated.splice(index, 1);
     updated.splice(targetIndex, 0, moved);
     saveCourseOrder(updated);
+    setReorderMessage(
+      `${moved.course_name} moved to position ${targetIndex + 1} of ${updated.length}`
+    );
   };
 
   const handleCourseDragStart = (e, index) => {
@@ -413,6 +436,19 @@ export default function Nptel() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => !uploading && fileInputRef.current?.click()}
+        role="button"
+        tabIndex={0}
+        aria-label="Upload a screenshot to extract NPTEL assignments"
+        aria-disabled={uploading || undefined}
+        onKeyDown={(e) => {
+          // It can't be a real <button> — it wraps the file input and the whole
+          // area is a drop target — and role="button" brings the semantics but not
+          // Enter/Space activation, so wire that up by hand.
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (!uploading) fileInputRef.current?.click();
+          }
+        }}
         style={{
           border: `2px dashed ${isDragOver ? "var(--accent)" : "var(--border)"}`,
           borderRadius: 14,
@@ -488,6 +524,12 @@ export default function Nptel() {
         </div>
       )}
 
+      {/* A card changing position is a purely visual cue, so mirror it in text
+          for screen readers. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {reorderMessage}
+      </div>
+
       {/* ── Courses List ── */}
       {!loading && courses.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -551,14 +593,22 @@ export default function Nptel() {
                           cursor: "grab",
                           display: "inline-flex",
                           alignItems: "center",
-                          justify: "center",
+                          justifyContent: "center",
                           flexShrink: 0,
                           marginTop: 1,
                         }}
                         onClick={(e) => e.stopPropagation()}
+                        aria-hidden="true"
                       >
                         <GripVertical size={18} />
                       </span>
+                      <ReorderControls
+                        itemName={course.course_name}
+                        position={index + 1}
+                        total={courses.length}
+                        onPrev={() => handleMoveCourse(index, -1)}
+                        onNext={() => handleMoveCourse(index, 1)}
+                      />
 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <h3 className="nptel-course-title">{course.course_name}</h3>
@@ -594,6 +644,7 @@ export default function Nptel() {
                         onClick={(e) => openEditModal(course, e)}
                         style={{ padding: "6px 8px", color: "var(--text-muted)" }}
                         title="Edit Course"
+                        aria-label={`Edit course ${course.course_name}`}
                       >
                         <Pencil size={15} />
                       </button>
@@ -602,6 +653,7 @@ export default function Nptel() {
                         onClick={(e) => handleDeleteCourse(course.id, e)}
                         style={{ padding: "6px 8px", color: "var(--text-muted)" }}
                         title="Delete Course"
+                        aria-label={`Delete course ${course.course_name}`}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -609,6 +661,8 @@ export default function Nptel() {
                         className="btn btn-ghost"
                         onClick={() => setExpandedCourseId(isExpanded ? null : course.id)}
                         style={{ padding: "6px 8px" }}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${course.course_name}`}
                       >
                         {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                       </button>
@@ -773,6 +827,7 @@ export default function Nptel() {
         >
           <div
             className="card nptel-modal-content"
+            {...dialogProps}
             style={{
               width: "100%", maxWidth: 500, maxHeight: "90vh", overflowY: "auto",
               position: "relative", boxShadow: "0 20px 25px -5px rgba(0,0,0,0.3)",
@@ -780,11 +835,12 @@ export default function Nptel() {
           >
             {/* Modal Header */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+              <h2 {...titleProps} style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
                 {editingCourse ? "✏️ Edit NPTEL Course" : "Add NPTEL Course"}
               </h2>
               <button
                 onClick={() => setShowModal(false)}
+                aria-label="Close dialog"
                 style={{ background: "none", border: "none", fontSize: 20, color: "var(--text-muted)", cursor: "pointer", padding: 4 }}
               >
                 ✕

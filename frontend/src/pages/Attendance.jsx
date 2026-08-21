@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import AttendanceRing from "../components/AttendanceRing.jsx";
 import BunkSimulator from "../components/BunkSimulator.jsx";
@@ -59,6 +60,12 @@ export default function Attendance() {
     // A failed load used to render 0% attendance, which reads as real data.
     refresh().catch((err) => setLoadError(err.message || "Couldn't load your attendance."));
   }, []);
+
+  useLoadAnnounce(
+    pageLoading,
+    "Loading attendance",
+    loadError ? "" : `Attendance loaded, ${records.length} record${records.length === 1 ? "" : "s"}`
+  );
 
   if (pageLoading) {
     return (
@@ -443,6 +450,7 @@ export default function Attendance() {
                   <button
                     type="button"
                     title="Clear attendance mark for this day"
+                    aria-label={`Clear attendance mark for ${formatNice(r.date)}`}
                     onClick={() => clearMark(r)}
                     style={{
                       fontSize: 12,

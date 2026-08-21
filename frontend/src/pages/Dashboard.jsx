@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
+import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import AttendanceRing from "../components/AttendanceRing.jsx";
 import ViewOnlyLinkCard from "../components/ViewOnlyLinkCard.jsx";
@@ -27,6 +28,8 @@ export default function Dashboard() {
       setPageLoading(false);
     });
   }, []);
+
+  useLoadAnnounce(pageLoading, "Loading dashboard", "Dashboard loaded");
 
   if (pageLoading) {
     return (

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
 import { api } from "../api/client.js";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
+import { useDialog } from "../hooks/useDialog.js";
 import { useToast } from "../context/ToastContext.jsx";
 import { fileToBase64, fileToArrayBuffer } from "../utils/fileToBase64.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -247,6 +248,16 @@ export default function Finance() {
   const [pdfPasswordError, setPdfPasswordError] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
   const [pendingBuffer, setPendingBuffer] = useState(null);
+
+  // Shared by the Cancel button and by Escape, so dismissing the dialog either way
+  // discards the pending upload instead of leaving it half-armed in state.
+  const cancelPasswordModal = useCallback(() => {
+    setShowPasswordModal(false);
+    setPendingFile(null);
+    setPendingBuffer(null);
+    setPdfPassword("");
+  }, []);
+  const { dialogProps, titleProps } = useDialog(showPasswordModal, cancelPasswordModal);
 
   const [budgetInput, setBudgetInput] = useState(user?.monthlyBudget ?? "");
   const [budgetSaving, setBudgetSaving] = useState(false);
@@ -843,12 +854,12 @@ export default function Finance() {
       {/* PDF Password Modal */}
       {showPasswordModal && (
         <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)" }}>
-          <div className="card" style={{ maxWidth: 420, width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, boxShadow: "var(--shadow)" }}>
+          <div className="card" {...dialogProps} style={{ maxWidth: 420, width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, boxShadow: "var(--shadow)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}>
                 <Lock size={20} />
               </div>
-              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Password Protected PDF</h3>
+              <h3 {...titleProps} style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Password Protected PDF</h3>
             </div>
             <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px 0", lineHeight: 1.4 }}>
               This bank statement is encrypted. Please enter the PDF password (e.g. DOB in <code>DDMMYYYY</code> format, PAN number, or Account number) to unlock it for AI extraction.
@@ -874,12 +885,7 @@ export default function Finance() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => {
-                    setShowPasswordModal(false);
-                    setPendingFile(null);
-                    setPendingBuffer(null);
-                    setPdfPassword("");
-                  }}
+                  onClick={cancelPasswordModal}
                 >
                   Cancel
                 </button>

@@ -425,6 +425,7 @@ export default function Pomodoro() {
         className="btn-ghost btn"
         onClick={decrementTime}
         title="-1 minute"
+        aria-label="Decrease timer by one minute"
         style={{ width: 40, height: 40, borderRadius: "50%", padding: 0 }}
       >
         <Minus size={18} />
@@ -433,6 +434,7 @@ export default function Pomodoro() {
       <button
         className="btn"
         onClick={() => setRunning(!running)}
+        aria-label={running ? "Pause timer" : "Start timer"}
         style={{
           width: 56,
           height: 56,
@@ -454,6 +456,7 @@ export default function Pomodoro() {
         className="btn-ghost btn"
         onClick={incrementTime}
         title="+1 minute"
+        aria-label="Increase timer by one minute"
         style={{ width: 40, height: 40, borderRadius: "50%", padding: 0 }}
       >
         <Plus size={18} />
@@ -466,6 +469,7 @@ export default function Pomodoro() {
           setSecondsLeft(customDurations[mode] * 60);
         }}
         title="Reset Timer"
+        aria-label="Reset timer"
         style={{ width: 40, height: 40, borderRadius: "50%", padding: 0 }}
       >
         <RotateCcw size={18} />
@@ -476,6 +480,7 @@ export default function Pomodoro() {
           className="btn-ghost btn"
           onClick={skipTimer}
           title="Skip session"
+          aria-label="Skip to the next session"
           style={{ width: 40, height: 40, borderRadius: "50%", padding: 0 }}
         >
           <SkipForward size={18} />
