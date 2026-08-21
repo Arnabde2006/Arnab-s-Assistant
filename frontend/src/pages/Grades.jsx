@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
 import CGPATrendVisualizer from "../components/CGPATrendVisualizer.jsx";
@@ -155,6 +156,8 @@ export default function Grades() {
   const [error, setError]         = useState("");
   const [data, setData]           = useState({ semesters: [], cgpa: 0, totalCredits: 0 });
   const [showUpload, setShowUpload] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const { run } = useAsyncAction();
 
   async function refresh() {
     try {
@@ -165,7 +168,10 @@ export default function Grades() {
     }
   }
 
-  useEffect(() => { refresh().catch(() => {}); }, []);
+  useEffect(() => {
+    // A zero CGPA looks like a real result, so don't leave a failure unsaid.
+    refresh().catch((err) => setLoadError(err.message || "Couldn't load your grades."));
+  }, []);
 
   async function handleUpload(e) {
     e.preventDefault();
@@ -192,8 +198,11 @@ export default function Grades() {
   }
 
   async function removeSemester(sem) {
-    const result = await api.del(`/ai/grades/${encodeURIComponent(sem)}`);
-    setData(result);
+    const { ok, result } = await run(() => api.del(`/ai/grades/${encodeURIComponent(sem)}`), {
+      errorMessage: `Couldn't delete ${sem}`,
+      successMessage: `Deleted ${sem}.`,
+    });
+    if (ok) setData(result);
   }
 
   if (pageLoading) return <GradesSkeleton />;
@@ -221,6 +230,22 @@ export default function Grades() {
           {showUpload ? "✕ Close" : "+ Upload grade card"}
         </button>
       </div>
+
+      {loadError && (
+        <div className="load-error" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setLoadError("");
+              refresh().catch((err) => setLoadError(err.message || "Couldn't load your grades."));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* ── Upload panel (collapsible) ── */}
       <div style={{

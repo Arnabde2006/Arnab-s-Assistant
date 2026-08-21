@@ -1,9 +1,12 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { api } from "../api/client.js";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { api, setUnauthorizedHandler } from "../api/client.js";
+import { useToast } from "./ToastContext.jsx";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
+  const toast = useToast();
+
   // Synchronously initialize user from localStorage to prevent layout shift or redirect to login on refresh
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem("user");
@@ -66,6 +69,24 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("user");
     setUser(null);
   }
+
+  // When any request comes back 401 mid-session, the stored token is no longer
+  // good. Clear it and say so once, rather than letting every subsequent action
+  // fail with an opaque error until the user thinks to reload.
+  const handleUnauthorized = useCallback(() => {
+    const wasSignedIn = !!localStorage.getItem("token");
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setUser(null);
+    if (wasSignedIn) {
+      toast.error("Your session has expired. Please sign in again.");
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(handleUnauthorized);
+    return () => setUnauthorizedHandler(null);
+  }, [handleUnauthorized]);
 
   return (
     <AuthContext.Provider value={{ user, setUser, loading, login, register, logout }}>

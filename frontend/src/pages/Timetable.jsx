@@ -19,6 +19,7 @@ import {
   GraduationCap,
 } from "lucide-react";
 import { api } from "../api/client.js";
+import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import { fileToBase64 } from "../utils/fileToBase64.js";
 import FileUpload from "../components/FileUpload.jsx";
 import { groupConsecutiveSlots } from "../utils/timetableUtils.js";
@@ -155,6 +156,8 @@ export default function Timetable() {
     instructor: "",
   });
   const [pageLoading, setPageLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const { run, pending } = useAsyncAction();
 
   const currentDayIndex = new Date().getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
 
@@ -198,7 +201,8 @@ export default function Timetable() {
   }
 
   useEffect(() => {
-    refresh().catch(() => {});
+    // An empty grid is indistinguishable from "no classes added yet", so say so.
+    refresh().catch((err) => setLoadError(err.message || "Couldn't load your timetable."));
   }, []);
 
   // ── Start Editing a Slot ───────────────────────────────────────────────
@@ -239,7 +243,7 @@ export default function Timetable() {
         className: editForm.className,
       });
       setEditingSlot(null);
-      refresh();
+      await run(refresh, { errorMessage: "Saved, but the grid may be out of date" });
     } catch (err) {
       alert(err.message || "Failed to update class slot");
     } finally {
@@ -278,7 +282,7 @@ export default function Timetable() {
         if (data.count > 0) {
           setUploadSuccess(`Success! Added ${data.count} class slot(s) to ${targetClass} timetable.`);
           setUploadFile(null);
-          refresh();
+          await run(refresh, { errorMessage: "Imported, but the grid may be out of date" });
         } else {
           setUploadError(`No class slots found for ${targetClass} — try a clearer photo or PDF.`);
         }
@@ -466,17 +470,21 @@ export default function Timetable() {
     }
     if (!form.subjectId && !form.subjectName.trim()) return;
 
-    await api.post("/timetable", {
-      subjectId: form.subjectId === "NEW" ? "" : form.subjectId,
-      subjectName: form.subjectName,
-      dayOfWeek: form.dayOfWeek,
-      startTime: form.startTime,
-      endTime: form.endTime,
-      room: form.room,
-      instructor: form.instructor,
-      className: form.className,
-    });
-    refresh();
+    const { ok } = await run(
+      () =>
+        api.post("/timetable", {
+          subjectId: form.subjectId === "NEW" ? "" : form.subjectId,
+          subjectName: form.subjectName,
+          dayOfWeek: form.dayOfWeek,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          room: form.room,
+          instructor: form.instructor,
+          className: form.className,
+        }),
+      { errorMessage: "Couldn't add that class" }
+    );
+    if (ok) await run(refresh, { errorMessage: "Saved, but the grid may be out of date" });
   }
 
   async function removeSlot(slotOrId) {
@@ -488,8 +496,26 @@ export default function Timetable() {
       ? [slotOrId._id]
       : [slotOrId];
 
-    await Promise.all(ids.map((id) => api.del(`/timetable/${id}`)));
-    refresh();
+    // Merged slots span several rows. Delete them one at a time so a failure
+    // halfway through can report how far it got — Promise.all would leave the
+    // grid in a half-deleted state with no indication of which part survived.
+    await run(
+      async () => {
+        let done = 0;
+        for (const id of ids) {
+          try {
+            await api.del(`/timetable/${id}`);
+            done++;
+          } catch (err) {
+            if (done === 0) throw err;
+            throw new Error(`only ${done} of ${ids.length} parts were removed (${err.message})`);
+          }
+        }
+      },
+      { errorMessage: "Couldn't remove that class" }
+    );
+    // Refresh either way: a partial delete still changed the server state.
+    await run(refresh, { errorMessage: "The grid may be out of date" });
   }
 
   return (
@@ -561,6 +587,22 @@ export default function Timetable() {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="load-error" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setLoadError("");
+              refresh().catch((err) => setLoadError(err.message || "Couldn't load your timetable."));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Control Bar: Class Selector & View Mode Pills */}
       <div
@@ -1737,8 +1779,8 @@ export default function Timetable() {
             <input className="input" placeholder="Optional" value={form.instructor} onChange={(e) => setForm({ ...form, instructor: e.target.value })} />
           </div>
 
-          <button className="btn" type="submit" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Plus size={15} /> Add Class Slot
+          <button className="btn" type="submit" disabled={pending} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Plus size={15} /> {pending ? "Adding…" : "Add Class Slot"}
           </button>
         </form>
       )}

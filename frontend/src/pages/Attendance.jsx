@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import AttendanceRing from "../components/AttendanceRing.jsx";
 import BunkSimulator from "../components/BunkSimulator.jsx";
 import FileUpload from "../components/FileUpload.jsx";
@@ -36,6 +37,8 @@ export default function Attendance() {
   const yesterday = toISO(new Date(Date.now() - 86400000));
   const [selectedDate, setSelectedDate] = useState(today);
   const [holidayReason, setHolidayReason] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const { run } = useAsyncAction();
 
   async function refresh() {
     try {
@@ -53,7 +56,8 @@ export default function Attendance() {
   }
 
   useEffect(() => {
-    refresh().catch(() => {});
+    // A failed load used to render 0% attendance, which reads as real data.
+    refresh().catch((err) => setLoadError(err.message || "Couldn't load your attendance."));
   }, []);
 
   if (pageLoading) {
@@ -113,22 +117,30 @@ export default function Attendance() {
   }
 
   async function mark(date, key) {
-    if (key === "no_college") {
-      await api.post("/holidays", { date });
-    } else {
-      await api.post("/attendance", { date, status: key });
-    }
-    refresh();
+    const { ok } = await run(
+      () =>
+        key === "no_college"
+          ? api.post("/holidays", { date })
+          : api.post("/attendance", { date, status: key }),
+      { errorMessage: `Couldn't mark ${formatNice(date)}` }
+    );
+    if (ok) await run(refresh, { errorMessage: "Saved, but the totals may be out of date" });
   }
 
   async function clearMark(entry) {
     if (!entry || !entry.type || !entry.rawId) return;
-    if (entry.type === "att") {
-      await api.delete(`/attendance/${entry.rawId}`);
-    } else if (entry.type === "hol") {
-      await api.delete(`/holidays/${entry.rawId}`);
-    }
-    refresh();
+    const path =
+      entry.type === "att"
+        ? `/attendance/${entry.rawId}`
+        : entry.type === "hol"
+        ? `/holidays/${entry.rawId}`
+        : null;
+    if (!path) return;
+    // NOTE: this used to call api.delete(), which doesn't exist on the client
+    // (it exports `del`) — so every unmark threw a TypeError that nothing
+    // caught, and the row silently stayed marked.
+    const { ok } = await run(() => api.del(path), { errorMessage: "Couldn't clear that day" });
+    if (ok) await run(refresh, { errorMessage: "Cleared, but the totals may be out of date" });
   }
 
   async function uploadHolidayList(e) {
@@ -145,7 +157,7 @@ export default function Attendance() {
       const result = await api.post("/holidays/upload", { fileBase64, mimeType: holidayFile.type });
       setUploadResult(result);
       setHolidayFile(null);
-      refresh();
+      await run(refresh, { errorMessage: "Imported, but the totals may be out of date" });
     } catch (err) {
       setUploadError(err.message);
     } finally {
@@ -186,6 +198,22 @@ export default function Attendance() {
           <p className="page-subtitle">Mark your whole day — present, absent, half day, or no college.</p>
         </div>
       </div>
+
+      {loadError && (
+        <div className="load-error" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setLoadError("");
+              refresh().catch((err) => setLoadError(err.message || "Couldn't load your attendance."));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
         <div className="card" style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>

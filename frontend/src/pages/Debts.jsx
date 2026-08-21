@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { api } from "../api/client.js";
+import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import Switch from "../components/Switch.jsx";
 import {
   Users,
@@ -42,72 +43,121 @@ export default function Debts() {
   // Form state for modal quick add form
   const [modalForm, setModalForm] = useState({ amount: "", direction: "owed_to_me", note: "" });
 
-  async function refresh() {
+  const { run, pending } = useAsyncAction();
+  const [loadError, setLoadError] = useState("");
+
+  const refresh = useCallback(async () => {
     const d = await api.get("/debts");
     setDebts(d.debts || []);
-  }
+  }, []);
 
   useEffect(() => {
-    refresh().catch(() => {});
-  }, []);
+    // A failed load must not render as an empty list — "you have no debts" and
+    // "we couldn't reach the server" are very different messages.
+    refresh().catch((err) => setLoadError(err.message || "Couldn't load your debts."));
+  }, [refresh]);
 
   async function addDebt(e, customName = null) {
     if (e) e.preventDefault();
     const name = customName || form.personName;
     if (!name.trim() || !form.amount || Number(form.amount) <= 0) return;
-    await api.post("/debts", {
-      personName: name.trim(),
-      amount: Number(form.amount),
-      direction: form.direction,
-      note: form.note
-    });
+    const { ok } = await run(
+      () =>
+        api.post("/debts", {
+          personName: name.trim(),
+          amount: Number(form.amount),
+          direction: form.direction,
+          note: form.note
+        }),
+      { errorMessage: "Couldn't add that entry" }
+    );
+    if (!ok) return;
     setForm({ personName: "", amount: "", direction: form.direction, note: "" });
-    refresh();
+    await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function addDebtInModal(personName, e) {
     if (e) e.preventDefault();
     if (!personName || !modalForm.amount || Number(modalForm.amount) <= 0) return;
-    await api.post("/debts", {
-      personName: personName.trim(),
-      amount: Number(modalForm.amount),
-      direction: modalForm.direction,
-      note: modalForm.note
-    });
+    const { ok } = await run(
+      () =>
+        api.post("/debts", {
+          personName: personName.trim(),
+          amount: Number(modalForm.amount),
+          direction: modalForm.direction,
+          note: modalForm.note
+        }),
+      { errorMessage: "Couldn't add that entry" }
+    );
+    if (!ok) return;
     setModalForm({ amount: "", direction: "owed_to_me", note: "" });
-    refresh();
+    await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function settle(id) {
-    await api.post(`/debts/${id}/settle`);
-    refresh();
+    const { ok } = await run(() => api.post(`/debts/${id}/settle`), {
+      errorMessage: "Couldn't settle that entry",
+    });
+    if (ok) await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function unsettle(id) {
-    await api.post(`/debts/${id}/unsettle`);
-    refresh();
+    const { ok } = await run(() => api.post(`/debts/${id}/unsettle`), {
+      errorMessage: "Couldn't reopen that entry",
+    });
+    if (ok) await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function removeDebt(id) {
-    await api.del(`/debts/${id}`);
-    refresh();
+    const { ok } = await run(() => api.del(`/debts/${id}`), {
+      errorMessage: "Couldn't delete that entry",
+    });
+    if (ok) await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   async function settleAllForPerson(personEntries) {
     const activeEntries = personEntries.filter((d) => !d.settled);
-    await Promise.all(activeEntries.map((d) => api.post(`/debts/${d.id}/settle`)));
-    refresh();
+    if (activeEntries.length === 0) return;
+
+    // Settle sequentially and report partial progress. Promise.all would leave
+    // the set half-applied on a failure with no indication of how far it got.
+    const { ok } = await run(
+      async () => {
+        let done = 0;
+        try {
+          for (const d of activeEntries) {
+            await api.post(`/debts/${d.id}/settle`);
+            done++;
+          }
+        } catch (err) {
+          throw new Error(
+            done === 0
+              ? err.message
+              : `only ${done} of ${activeEntries.length} were settled (${err.message})`
+          );
+        }
+      },
+      { errorMessage: "Couldn't settle everything" }
+    );
+    // Refresh either way — on partial failure the list is genuinely changed.
+    await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
+    return ok;
   }
 
   async function submitPartialSettle(e) {
     if (e) e.preventDefault();
     if (!partialDebt || !partialPaidAmount || Number(partialPaidAmount) <= 0) return;
-    await api.post(`/debts/${partialDebt.id}/partial-settle`, {
-      paidAmount: Number(partialPaidAmount)
-    });
+    const { ok } = await run(
+      () =>
+        api.post(`/debts/${partialDebt.id}/partial-settle`, {
+          paidAmount: Number(partialPaidAmount)
+        }),
+      { errorMessage: "Couldn't record that payment" }
+    );
+    if (!ok) return;
     setPartialDebt(null);
     setPartialPaidAmount("");
-    refresh();
+    await run(refresh, { errorMessage: "Saved, but the list may be out of date" });
   }
 
   // All aggregation derives purely from `debts`, so memoize it on [debts].
@@ -194,6 +244,22 @@ export default function Debts() {
         </div>
         <Switch checked={showSettled} onChange={setShowSettled} label="Show settled" />
       </div>
+
+      {loadError && (
+        <div className="load-error" role="alert">
+          <span>{loadError}</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              setLoadError("");
+              refresh().catch((err) => setLoadError(err.message || "Couldn't load your debts."));
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Overview Cards */}
       <div className="grid grid-3" style={{ marginBottom: 20 }}>
@@ -327,8 +393,8 @@ export default function Debts() {
           onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
           style={{ marginBottom: 12 }}
         />
-        <button className="btn" type="submit" style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
-          <Plus size={16} /> Add Entry
+        <button className="btn" type="submit" disabled={pending} style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+          <Plus size={16} /> {pending ? "Saving…" : "Add Entry"}
         </button>
       </form>
 
@@ -826,8 +892,8 @@ export default function Debts() {
                   style={{ flex: 2, fontSize: 13 }}
                 />
               </div>
-              <button className="btn" type="submit" style={{ width: "100%", fontSize: 12, padding: "6px" }}>
-                Add Entry for {selectedPersonData.displayName}
+              <button className="btn" type="submit" disabled={pending} style={{ width: "100%", fontSize: 12, padding: "6px" }}>
+                {pending ? "Saving…" : `Add Entry for ${selectedPersonData.displayName}`}
               </button>
             </form>
 
@@ -1000,9 +1066,10 @@ export default function Debts() {
                 <button
                   type="submit"
                   className="btn"
+                  disabled={pending}
                   style={{ fontSize: 13 }}
                 >
-                  Confirm Partial Payment
+                  {pending ? "Saving…" : "Confirm Partial Payment"}
                 </button>
               </div>
             </form>
