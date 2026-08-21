@@ -82,21 +82,37 @@ Include every full-day closure you can find. If the list only shows day/month, i
   if (!Array.isArray(holidays)) holidays = [];
 
   const pool = getPool();
-  let count = 0;
+
+  // Collapse to one entry per date (last mention wins, matching the old loop's
+  // last-write-under-ON-CONFLICT behavior) so the batched upsert can't touch the
+  // same (user_id, date) twice — Postgres rejects that within one statement.
+  const byDate = new Map();
   for (const h of holidays) {
     if (!h.date) continue;
-    await pool.query("DELETE FROM day_attendance WHERE user_id = $1 AND date = $2", [req.userId, h.date]);
+    byDate.set(h.date, h.reason || "");
+  }
+  const dates = [...byDate.keys()];
+  const reasons = [...byDate.values()];
+
+  if (dates.length > 0) {
+    // A date is either a holiday or an attendance record, never both — clear any
+    // attendance rows for these dates, then upsert all holidays. Two set-based
+    // statements instead of two round-trips per row.
+    await pool.query(
+      "DELETE FROM day_attendance WHERE user_id = $1 AND date = ANY($2::date[])",
+      [req.userId, dates]
+    );
     await pool.query(
       `INSERT INTO college_holidays (user_id, date, reason, source)
-       VALUES ($1, $2, $3, 'upload')
+       SELECT $1, d, r, 'upload'
+       FROM unnest($2::date[], $3::text[]) AS t(d, r)
        ON CONFLICT (user_id, date)
        DO UPDATE SET reason = EXCLUDED.reason, source = 'upload'`,
-      [req.userId, h.date, h.reason || ""]
+      [req.userId, dates, reasons]
     );
-    count += 1;
   }
 
-  res.json({ count });
+  res.json({ count: dates.length });
 }));
 
 export default router;

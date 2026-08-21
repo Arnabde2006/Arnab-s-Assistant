@@ -3,95 +3,45 @@ import { getPool } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { callGemini } from "../gemini.js";
 import { safeParseJSON, toISO } from "../utils/dateHelpers.js";
+import { calculateWeeklyDueDate } from "../utils/nptelDates.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 router.use(requireAuth);
 
-let tableEnsured = false;
-async function ensureTables() {
-  if (tableEnsured) return;
-  const pool = getPool();
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS nptel_courses (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      course_name TEXT NOT NULL,
-      duration_weeks INTEGER NOT NULL DEFAULT 8,
-      start_date DATE NOT NULL DEFAULT CURRENT_DATE,
-      assignment_due_day INTEGER NOT NULL DEFAULT 3,
-      exam_date DATE,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-
-    ALTER TABLE nptel_courses ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
-
-    CREATE TABLE IF NOT EXISTS nptel_assignments (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      course_id UUID NOT NULL REFERENCES nptel_courses(id) ON DELETE CASCADE,
-      week_number INTEGER NOT NULL,
-      title TEXT NOT NULL,
-      due_date DATE NOT NULL,
-      submitted BOOLEAN NOT NULL DEFAULT false,
-      score NUMERIC,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_nptel_courses_user ON nptel_courses(user_id);
-    CREATE INDEX IF NOT EXISTS idx_nptel_assignments_course ON nptel_assignments(course_id, due_date);
-  `);
-  tableEnsured = true;
-}
-
-// Utility function to calculate weekly assignment dates
-// NPTEL Week 1 assignment is due 2 weeks after start date (e.g. Aug 5 for July 20 start)
-function calculateWeeklyDueDate(startDateStr, weekNum, targetDayOfWeek = 3) {
-  const start = new Date(startDateStr + "T00:00:00");
-  const baseDate = new Date(start);
-  baseDate.setDate(baseDate.getDate() + ((weekNum + 1) * 7));
-
-  // Adjust to nearest targetDayOfWeek (e.g. Wednesday = 3)
-  const currentDay = baseDate.getDay();
-  let diff = targetDayOfWeek - currentDay;
-  baseDate.setDate(baseDate.getDate() + diff);
-
-  return toISO(baseDate);
+// Insert a batch of assignments for one course in a single round-trip. `rows` is
+// an array of { week_number, title, due_date, submitted?, score? }. Returns the
+// inserted rows (RETURNING *), sorted by week number so callers get a stable
+// order regardless of the order Postgres returns them in.
+async function insertAssignments(pool, userId, courseId, rows) {
+  if (rows.length === 0) return [];
+  const res = await pool.query(
+    `INSERT INTO nptel_assignments (user_id, course_id, week_number, title, due_date, submitted, score)
+     SELECT $1, $2, week_number, title, due_date, submitted, score
+     FROM unnest($3::int[], $4::text[], $5::date[], $6::boolean[], $7::numeric[])
+          AS t(week_number, title, due_date, submitted, score)
+     RETURNING *`,
+    [
+      userId,
+      courseId,
+      rows.map((r) => r.week_number),
+      rows.map((r) => r.title),
+      rows.map((r) => r.due_date),
+      rows.map((r) => r.submitted ?? false),
+      rows.map((r) => r.score ?? null),
+    ]
+  );
+  return res.rows.sort((a, b) => a.week_number - b.week_number);
 }
 
 // ─── GET /api/nptel ──────────────────────────────────────────────────────────
 router.get("/", asyncHandler(async (req, res) => {
-  await ensureTables();
   const pool = getPool();
 
   const coursesRes = await pool.query(
     "SELECT * FROM nptel_courses WHERE user_id = $1 ORDER BY sort_order ASC, created_at DESC",
     [req.userId]
   );
-
-  // Auto-correct assignment due dates for existing courses if calculated with old offset
-  for (const c of coursesRes.rows) {
-    const startDateStr = toISO(new Date(c.start_date));
-    const w1Res = await pool.query(
-      "SELECT due_date FROM nptel_assignments WHERE course_id = $1 AND week_number = 1",
-      [c.id]
-    );
-    if (w1Res.rows.length > 0 && w1Res.rows[0].due_date) {
-      const w1Due = new Date(w1Res.rows[0].due_date);
-      const startD = new Date(startDateStr + "T00:00:00");
-      const diffDays = Math.round((w1Due - startD) / (1000 * 60 * 60 * 24));
-      if (diffDays < 12) {
-        for (let w = 1; w <= c.duration_weeks; w++) {
-          const newDueDate = calculateWeeklyDueDate(startDateStr, w, c.assignment_due_day);
-          await pool.query(
-            "UPDATE nptel_assignments SET due_date = $1 WHERE course_id = $2 AND week_number = $3",
-            [newDueDate, c.id, w]
-          );
-        }
-      }
-    }
-  }
 
   const assignmentsRes = await pool.query(
     `SELECT a.*, c.course_name
@@ -119,7 +69,6 @@ router.get("/", asyncHandler(async (req, res) => {
 
 // ─── POST /api/nptel ─────────────────────────────────────────────────────────
 router.post("/", asyncHandler(async (req, res) => {
-  await ensureTables();
   const { course_name, duration_weeks, start_date, assignment_due_day, exam_date, custom_assignments } = req.body;
 
   if (!course_name) {
@@ -162,46 +111,34 @@ router.post("/", asyncHandler(async (req, res) => {
 
     await pool.query("DELETE FROM nptel_assignments WHERE course_id = $1", [courseId]);
 
-    const insertedAssignments = [];
+    let assignmentRows;
     if (Array.isArray(custom_assignments) && custom_assignments.length > 0) {
-      for (const ca of custom_assignments) {
-        if (!ca.week_number || !ca.due_date) continue;
-        const prev = prevByWeek[ca.week_number];
-        const aRes = await pool.query(
-          `INSERT INTO nptel_assignments (user_id, course_id, week_number, title, due_date, submitted, score)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [
-            req.userId,
-            courseId,
-            ca.week_number,
-            ca.title || `Week ${ca.week_number} Assignment`,
-            ca.due_date,
-            prev?.submitted || false,
-            prev?.score || null,
-          ]
-        );
-        insertedAssignments.push(aRes.rows[0]);
-      }
+      assignmentRows = custom_assignments
+        .filter((ca) => ca.week_number && ca.due_date)
+        .map((ca) => {
+          const prev = prevByWeek[ca.week_number];
+          return {
+            week_number: ca.week_number,
+            title: ca.title || `Week ${ca.week_number} Assignment`,
+            due_date: ca.due_date,
+            submitted: prev?.submitted || false,
+            score: prev?.score || null,
+          };
+        });
     } else {
+      assignmentRows = [];
       for (let w = 1; w <= weeks; w++) {
-        const dueDate = calculateWeeklyDueDate(startDate, w, dueDay);
         const prev = prevByWeek[w];
-        const aRes = await pool.query(
-          `INSERT INTO nptel_assignments (user_id, course_id, week_number, title, due_date, submitted, score)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [
-            req.userId,
-            courseId,
-            w,
-            `Week ${w} Assignment`,
-            dueDate,
-            prev?.submitted || false,
-            prev?.score || null,
-          ]
-        );
-        insertedAssignments.push(aRes.rows[0]);
+        assignmentRows.push({
+          week_number: w,
+          title: `Week ${w} Assignment`,
+          due_date: calculateWeeklyDueDate(startDate, w, dueDay),
+          submitted: prev?.submitted || false,
+          score: prev?.score || null,
+        });
       }
     }
+    const insertedAssignments = await insertAssignments(pool, req.userId, courseId, assignmentRows);
 
     return res.status(200).json({ course: { ...updateRes.rows[0], assignments: insertedAssignments }, updated: true });
   }
@@ -214,57 +151,56 @@ router.post("/", asyncHandler(async (req, res) => {
   );
 
   const course = courseRes.rows[0];
-  const insertedAssignments = [];
 
+  let newRows;
   if (Array.isArray(custom_assignments) && custom_assignments.length > 0) {
     // Custom assignments array provided
-    for (const ca of custom_assignments) {
-      if (!ca.week_number || !ca.due_date) continue;
-      const aRes = await pool.query(
-        `INSERT INTO nptel_assignments (user_id, course_id, week_number, title, due_date)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [req.userId, course.id, ca.week_number, ca.title || `Week ${ca.week_number} Assignment`, ca.due_date]
-      );
-      insertedAssignments.push(aRes.rows[0]);
-    }
+    newRows = custom_assignments
+      .filter((ca) => ca.week_number && ca.due_date)
+      .map((ca) => ({
+        week_number: ca.week_number,
+        title: ca.title || `Week ${ca.week_number} Assignment`,
+        due_date: ca.due_date,
+      }));
   } else {
     // Auto-generate weekly assignment schedule
+    newRows = [];
     for (let w = 1; w <= weeks; w++) {
-      const dueDate = calculateWeeklyDueDate(startDate, w, dueDay);
-      const aRes = await pool.query(
-        `INSERT INTO nptel_assignments (user_id, course_id, week_number, title, due_date)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [req.userId, course.id, w, `Week ${w} Assignment`, dueDate]
-      );
-      insertedAssignments.push(aRes.rows[0]);
+      newRows.push({
+        week_number: w,
+        title: `Week ${w} Assignment`,
+        due_date: calculateWeeklyDueDate(startDate, w, dueDay),
+      });
     }
   }
+  const insertedAssignments = await insertAssignments(pool, req.userId, course.id, newRows);
 
   res.status(201).json({ course: { ...course, assignments: insertedAssignments } });
 }));
 
 // ─── PUT /api/nptel/reorder ──────────────────────────────────────────────────
 router.put("/reorder", asyncHandler(async (req, res) => {
-  await ensureTables();
   const { courseIds } = req.body;
   if (!Array.isArray(courseIds)) {
     return res.status(400).json({ error: "courseIds array is required" });
   }
 
   const pool = getPool();
-  for (let i = 0; i < courseIds.length; i++) {
-    await pool.query(
-      "UPDATE nptel_courses SET sort_order = $1 WHERE id = $2 AND user_id = $3",
-      [i, courseIds[i], req.userId]
-    );
-  }
+  // One round-trip: map each id to its position via unnest WITH ORDINALITY.
+  // Ordinality is 1-based, so subtract 1 to keep the original 0-based sort_order.
+  await pool.query(
+    `UPDATE nptel_courses AS c
+       SET sort_order = ids.ord - 1
+     FROM unnest($1::uuid[]) WITH ORDINALITY AS ids(id, ord)
+     WHERE c.id = ids.id AND c.user_id = $2`,
+    [courseIds, req.userId]
+  );
 
   res.json({ success: true });
 }));
 
 // ─── PUT /api/nptel/assignments/:id ──────────────────────────────────────────
 router.put("/assignments/:id", asyncHandler(async (req, res) => {
-  await ensureTables();
   const { submitted, score } = req.body;
 
   const pool = getPool();
@@ -286,7 +222,6 @@ router.put("/assignments/:id", asyncHandler(async (req, res) => {
 
 // ─── PUT /api/nptel/:id ─────────────────────────────────────────────────────
 router.put("/:id", asyncHandler(async (req, res) => {
-  await ensureTables();
   const { course_name, duration_weeks, start_date, assignment_due_day, exam_date } = req.body;
   const pool = getPool();
   const courseId = req.params.id;
@@ -340,15 +275,18 @@ router.put("/:id", asyncHandler(async (req, res) => {
 
     await pool.query("DELETE FROM nptel_assignments WHERE course_id = $1", [courseId]);
 
+    const regenRows = [];
     for (let w = 1; w <= weeks; w++) {
-      const dueDate = calculateWeeklyDueDate(newStartDate, w, dueDay);
       const wasSubmitted = submittedByWeek[w] !== undefined;
-      await pool.query(
-        `INSERT INTO nptel_assignments (user_id, course_id, week_number, title, due_date, submitted, score)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [req.userId, courseId, w, `Week ${w} Assignment`, dueDate, wasSubmitted, wasSubmitted ? submittedByWeek[w] : null]
-      );
+      regenRows.push({
+        week_number: w,
+        title: `Week ${w} Assignment`,
+        due_date: calculateWeeklyDueDate(newStartDate, w, dueDay),
+        submitted: wasSubmitted,
+        score: wasSubmitted ? submittedByWeek[w] : null,
+      });
     }
+    await insertAssignments(pool, req.userId, courseId, regenRows);
   }
 
   res.json({ course: courseRes.rows[0] });
@@ -356,7 +294,6 @@ router.put("/:id", asyncHandler(async (req, res) => {
 
 // ─── DELETE /api/nptel/:id ───────────────────────────────────────────────────
 router.delete("/:id", asyncHandler(async (req, res) => {
-  await ensureTables();
   const pool = getPool();
   await pool.query("DELETE FROM nptel_courses WHERE id = $1 AND user_id = $2", [req.params.id, req.userId]);
   res.json({ success: true });

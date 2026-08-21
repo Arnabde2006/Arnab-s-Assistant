@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { api } from "../api/client.js";
 import Switch from "../components/Switch.jsx";
 import {
@@ -110,63 +110,77 @@ export default function Debts() {
     refresh();
   }
 
-  const active = debts.filter((d) => !d.settled);
-  const settled = debts.filter((d) => d.settled);
-  const owedToMe = active.filter((d) => d.direction === "owed_to_me").reduce((s, d) => s + Number(d.amount), 0);
-  const iOwe = active.filter((d) => d.direction === "i_owe").reduce((s, d) => s + Number(d.amount), 0);
-  const netPosition = owedToMe - iOwe;
+  // All aggregation derives purely from `debts`, so memoize it on [debts].
+  // Without this, typing in the search box (which is separate state) would
+  // re-run the whole person-map build + sort on every keystroke.
+  const { active, settled, owedToMe, iOwe, netPosition, personMap, uniquePeopleList } = useMemo(() => {
+    const active = debts.filter((d) => !d.settled);
+    const settled = debts.filter((d) => d.settled);
+    const owedToMe = active.filter((d) => d.direction === "owed_to_me").reduce((s, d) => s + Number(d.amount), 0);
+    const iOwe = active.filter((d) => d.direction === "i_owe").reduce((s, d) => s + Number(d.amount), 0);
+    const netPosition = owedToMe - iOwe;
 
-  const visibleEntries = showSettled ? [...active, ...settled] : active;
+    // Person aggregation
+    const personMap = {};
+    debts.forEach((d) => {
+      const rawName = d.person_name?.trim() || "Unknown";
+      const key = rawName.toLowerCase();
+      if (!personMap[key]) {
+        personMap[key] = {
+          key,
+          displayName: rawName,
+          owedToMeActive: 0,
+          iOweActive: 0,
+          owedToMeTotal: 0,
+          iOweTotal: 0,
+          activeCount: 0,
+          settledCount: 0,
+          entries: [],
+        };
+      }
+      personMap[key].entries.push(d);
+      const amt = Number(d.amount) || 0;
+      if (d.direction === "owed_to_me") {
+        personMap[key].owedToMeTotal += amt;
+        if (!d.settled) {
+          personMap[key].owedToMeActive += amt;
+          personMap[key].activeCount++;
+        } else {
+          personMap[key].settledCount++;
+        }
+      } else {
+        personMap[key].iOweTotal += amt;
+        if (!d.settled) {
+          personMap[key].iOweActive += amt;
+          personMap[key].activeCount++;
+        } else {
+          personMap[key].settledCount++;
+        }
+      }
+    });
 
-  // Person aggregation
-  const personMap = {};
-  debts.forEach((d) => {
-    const rawName = d.person_name?.trim() || "Unknown";
-    const key = rawName.toLowerCase();
-    if (!personMap[key]) {
-      personMap[key] = {
-        key,
-        displayName: rawName,
-        owedToMeActive: 0,
-        iOweActive: 0,
-        owedToMeTotal: 0,
-        iOweTotal: 0,
-        activeCount: 0,
-        settledCount: 0,
-        entries: [],
+    const uniquePeopleList = Object.values(personMap).map((p) => {
+      const netActive = p.owedToMeActive - p.iOweActive;
+      return {
+        ...p,
+        netActive,
       };
-    }
-    personMap[key].entries.push(d);
-    const amt = Number(d.amount) || 0;
-    if (d.direction === "owed_to_me") {
-      personMap[key].owedToMeTotal += amt;
-      if (!d.settled) {
-        personMap[key].owedToMeActive += amt;
-        personMap[key].activeCount++;
-      } else {
-        personMap[key].settledCount++;
-      }
-    } else {
-      personMap[key].iOweTotal += amt;
-      if (!d.settled) {
-        personMap[key].iOweActive += amt;
-        personMap[key].activeCount++;
-      } else {
-        personMap[key].settledCount++;
-      }
-    }
-  });
+    }).sort((a, b) => Math.abs(b.netActive) - Math.abs(a.netActive));
 
-  const uniquePeopleList = Object.values(personMap).map((p) => {
-    const netActive = p.owedToMeActive - p.iOweActive;
-    return {
-      ...p,
-      netActive,
-    };
-  }).sort((a, b) => Math.abs(b.netActive) - Math.abs(a.netActive));
+    return { active, settled, owedToMe, iOwe, netPosition, personMap, uniquePeopleList };
+  }, [debts]);
 
-  const filteredPeople = uniquePeopleList.filter((p) =>
-    p.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+  const visibleEntries = useMemo(
+    () => (showSettled ? [...active, ...settled] : active),
+    [active, settled, showSettled]
+  );
+
+  // Only the cheap search filter re-runs on keystrokes now.
+  const filteredPeople = useMemo(
+    () => uniquePeopleList.filter((p) =>
+      p.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+    ),
+    [uniquePeopleList, searchQuery]
   );
 
   const selectedPersonData = selectedPersonKey ? personMap[selectedPersonKey] : null;

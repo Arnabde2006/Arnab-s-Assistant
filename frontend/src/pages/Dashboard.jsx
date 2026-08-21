@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -366,6 +366,15 @@ function ChatCard() {
     return result.join("<br />").replace(/(<br\s*\/?>\s*)+(<div style="overflow-x: auto;)/gi, "$2").replace(/(<\/div>)\s*(<br\s*\/?>\s*)+/gi, "$1");
   }
 
+  // Pre-render committed messages once and cache on [messages]. Without this,
+  // every streaming token (which updates separate `streamingText` state) would
+  // re-run the markdown/table parser over the ENTIRE chat history. formatMessage
+  // is a pure text→HTML transform, so it's intentionally not a dependency here.
+  const renderedMessages = useMemo(
+    () => messages.map((m) => formatMessage(m.text)),
+    [messages]
+  );
+
   return (
     <div className="card">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -409,7 +418,7 @@ function ChatCard() {
           <div
             key={i}
             className={`chat-bubble ${m.role}`}
-            dangerouslySetInnerHTML={{ __html: formatMessage(m.text) }}
+            dangerouslySetInnerHTML={{ __html: renderedMessages[i] }}
           />
         ))}
 

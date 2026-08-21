@@ -2,18 +2,31 @@ import { getPool } from "../db.js";
 
 export async function computeAttendanceSummary(userId) {
   const pool = getPool();
-  const userResult = await pool.query("SELECT attendance_goal FROM users WHERE id = $1", [userId]);
-  const goal = userResult.rows[0]?.attendance_goal ?? 75;
 
-  const recordsResult = await pool.query("SELECT * FROM day_attendance WHERE user_id = $1", [userId]);
-  const records = recordsResult.rows;
-  const holidaysResult = await pool.query("SELECT COUNT(*)::int AS count FROM college_holidays WHERE user_id = $1", [userId]);
+  // These three reads are independent — run them concurrently. Attendance is
+  // aggregated in SQL (GROUP BY status) instead of fetching every row and
+  // counting in JS, since this powers both /attendance/summary and the public
+  // /view/:token endpoint.
+  const [userResult, statusResult, holidaysResult] = await Promise.all([
+    pool.query("SELECT attendance_goal FROM users WHERE id = $1", [userId]),
+    pool.query(
+      "SELECT status, COUNT(*)::int AS count FROM day_attendance WHERE user_id = $1 GROUP BY status",
+      [userId]
+    ),
+    pool.query("SELECT COUNT(*)::int AS count FROM college_holidays WHERE user_id = $1", [userId]),
+  ]);
+
+  const goal = userResult.rows[0]?.attendance_goal ?? 75;
   const holidaysCount = holidaysResult.rows[0]?.count ?? 0;
 
-  const total = records.length;
-  const present = records.filter((r) => r.status === "present").length;
-  const absent = records.filter((r) => r.status === "absent").length;
-  const halfDay = records.filter((r) => r.status === "half_day").length;
+  const counts = { present: 0, absent: 0, half_day: 0 };
+  for (const row of statusResult.rows) {
+    counts[row.status] = row.count;
+  }
+  const present = counts.present;
+  const absent = counts.absent;
+  const halfDay = counts.half_day;
+  const total = present + absent + halfDay;
   const effectivePresent = present + halfDay * 0.5;
   const percentage = total === 0 ? 0 : (effectivePresent / total) * 100;
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
 import { api } from "../api/client.js";
 import { fileToBase64, fileToArrayBuffer } from "../utils/fileToBase64.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -249,18 +249,37 @@ export default function Finance() {
   const [budgetInput, setBudgetInput] = useState(user?.monthlyBudget ?? "");
   const [budgetSaving, setBudgetSaving] = useState(false);
 
-  async function refresh(m = selectedMonth) {
-    const [sum, tx] = await Promise.all([
-      api.get(`/finance/summary?month=${m}`),
-      api.get("/finance/transactions"),
-    ]);
+  // The summary is month-specific (server aggregates by month); the transaction
+  // list is not — it's the full history, filtered to a month client-side below.
+  // So switching months only needs to refetch the summary, not re-download every
+  // transaction each time.
+  const refreshSummary = useCallback(async (m) => {
+    const sum = await api.get(`/finance/summary?month=${m}`);
     setSummary(sum);
-    setTransactions(tx.transactions);
-  }
+  }, []);
 
+  const refreshTransactions = useCallback(async () => {
+    const tx = await api.get("/finance/transactions");
+    setTransactions(tx.transactions);
+  }, []);
+
+  // Full refresh after a mutation: the affected month's summary + the shared list.
+  const refresh = useCallback(
+    async (m = selectedMonth) => {
+      await Promise.all([refreshSummary(m), refreshTransactions()]);
+    },
+    [selectedMonth, refreshSummary, refreshTransactions]
+  );
+
+  // Transactions are fetched once on mount (month-independent)…
   useEffect(() => {
-    refresh(selectedMonth).catch(() => {});
-  }, [selectedMonth]);
+    refreshTransactions().catch(() => {});
+  }, [refreshTransactions]);
+
+  // …while the summary refetches whenever the selected month changes.
+  useEffect(() => {
+    refreshSummary(selectedMonth).catch(() => {});
+  }, [selectedMonth, refreshSummary]);
 
   async function addTransaction(e) {
     e.preventDefault();
@@ -270,16 +289,16 @@ export default function Finance() {
     refresh(selectedMonth);
   }
 
-  async function updateTransaction(id, patch) {
+  const updateTransaction = useCallback(async (id, patch) => {
     await api.put(`/finance/transactions/${id}`, patch);
     refresh(selectedMonth);
-  }
+  }, [refresh, selectedMonth]);
 
-  async function removeTransaction(id) {
+  const removeTransaction = useCallback(async (id) => {
     await api.del(`/finance/transactions/${id}`);
     setSelectedIds((prev) => prev.filter((i) => i !== id));
     refresh(selectedMonth);
-  }
+  }, [refresh, selectedMonth]);
 
   async function uploadStatement(e, providedPassword = null) {
     if (e) e.preventDefault();
@@ -364,9 +383,17 @@ export default function Finance() {
   }
 
   const maxCategory = summary?.categories?.[0]?.amount || 1;
-  const filteredTransactions = txFilter === "month"
-    ? transactions.filter((t) => t.date && t.date.startsWith(selectedMonth))
-    : transactions;
+  const filteredTransactions = useMemo(
+    () =>
+      txFilter === "month"
+        ? transactions.filter((t) => t.date && t.date.startsWith(selectedMonth))
+        : transactions,
+    [transactions, txFilter, selectedMonth]
+  );
+  const monthTransactionCount = useMemo(
+    () => transactions.filter((t) => t.date && t.date.startsWith(selectedMonth)).length,
+    [transactions, selectedMonth]
+  );
 
   const isCurrentMonth = selectedMonth === currentMonthStr;
 
@@ -380,11 +407,11 @@ export default function Finance() {
     }
   }
 
-  function toggleSelectOne(id) {
+  const toggleSelectOne = useCallback((id) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
-  }
+  }, []);
 
   async function handleBulkCategoryChange(e) {
     e.preventDefault();
@@ -643,7 +670,7 @@ export default function Finance() {
               style={{ fontSize: 11, padding: "4px 10px" }}
               onClick={() => setTxFilter("month")}
             >
-              {formatMonthName(selectedMonth)} ({transactions.filter((t) => t.date && t.date.startsWith(selectedMonth)).length})
+              {formatMonthName(selectedMonth)} ({monthTransactionCount})
             </button>
           </div>
         </div>
@@ -803,7 +830,7 @@ export default function Finance() {
   );
 }
 
-function TransactionRow({ t, selectionMode, selected, onSelect, onUpdate, onDelete }) {
+const TransactionRow = memo(function TransactionRow({ t, selectionMode, selected, onSelect, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -880,4 +907,4 @@ function TransactionRow({ t, selectionMode, selected, onSelect, onUpdate, onDele
       </div>
     </div>
   );
-}
+});
