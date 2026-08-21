@@ -324,13 +324,20 @@ export default function Timetable() {
   };
 
   // ── Class slot calculations & Day filtering ──────────────────────────────
-  const slotClasses = slots.map((s) => s.className || "BCA 2A");
-  const allClassesList = Array.from(new Set([...PRESET_CLASSES, ...slotClasses]));
-
-  const classSlotCounts = {};
-  allClassesList.forEach((cls) => {
-    classSlotCounts[cls] = slots.filter((s) => (s.className || "BCA 2A") === cls).length;
-  });
+  // Derived purely from `slots`; memoized so it doesn't rebuild the class list
+  // and per-class counts on every unrelated render. Counting is O(slots) rather
+  // than the previous O(classes × slots).
+  const { allClassesList, classSlotCounts } = useMemo(() => {
+    const slotClasses = slots.map((s) => s.className || "BCA 2A");
+    const allClassesList = Array.from(new Set([...PRESET_CLASSES, ...slotClasses]));
+    const classSlotCounts = {};
+    for (const cls of allClassesList) classSlotCounts[cls] = 0;
+    for (const s of slots) {
+      const cls = s.className || "BCA 2A";
+      classSlotCounts[cls] = (classSlotCounts[cls] || 0) + 1;
+    }
+    return { allClassesList, classSlotCounts };
+  }, [slots]);
 
   const filteredSlots = useMemo(() => {
     return slots.filter((s) => {

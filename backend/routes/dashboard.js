@@ -13,10 +13,14 @@ router.get("/", asyncHandler(async (req, res) => {
   today.setHours(0, 0, 0, 0);
   const todayStr = toISO(today);
 
-  const todosResult = await pool.query(
-    "SELECT * FROM todos WHERE user_id = $1 ORDER BY date DESC",
-    [req.userId]
-  );
+  // These three queries are independent — run them concurrently so this
+  // endpoint (the first request after login) waits on one round-trip, not three.
+  const [todosResult, recordsResult, holidaysResult] = await Promise.all([
+    pool.query("SELECT date, done FROM todos WHERE user_id = $1 ORDER BY date DESC", [req.userId]),
+    pool.query("SELECT date, status FROM day_attendance WHERE user_id = $1 ORDER BY date DESC", [req.userId]),
+    pool.query("SELECT date FROM college_holidays WHERE user_id = $1", [req.userId]),
+  ]);
+
   const byDate = {};
   for (const t of todosResult.rows) {
     if (!byDate[t.date]) byDate[t.date] = [];
@@ -46,18 +50,10 @@ router.get("/", asyncHandler(async (req, res) => {
   const pendingToday = (byDate[todayStr] || []).filter((t) => !t.done).length;
   const totalPendingUpcoming = todosResult.rows.filter((t) => !t.done && t.date >= todayStr).length;
 
-  const recordsResult = await pool.query(
-    "SELECT * FROM day_attendance WHERE user_id = $1 ORDER BY date DESC",
-    [req.userId]
-  );
   const recByDate = {};
   for (const r of recordsResult.rows) {
     recByDate[r.date] = r;
   }
-  const holidaysResult = await pool.query(
-    "SELECT date FROM college_holidays WHERE user_id = $1",
-    [req.userId]
-  );
   const holidaySet = new Set(holidaysResult.rows.map((h) => h.date));
 
   let attendanceStreak = 0;

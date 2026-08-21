@@ -156,7 +156,7 @@ router.post("/chat", async (req, res) => {
     const actionResult = await processAiChatAction(req.userId, message);
 
     const [attendanceRes, todosRes, examsRes, gradesSummary, financeSummary, subsRes, nptelRes, holidaysRes] = await Promise.all([
-      pool.query("SELECT status FROM day_attendance WHERE user_id = $1", [req.userId]),
+      pool.query("SELECT status, COUNT(*)::int AS count FROM day_attendance WHERE user_id = $1 GROUP BY status", [req.userId]),
       pool.query("SELECT text, date, done FROM todos WHERE user_id = $1 AND date >= $2 ORDER BY date ASC LIMIT 20", [req.userId, today]),
       pool.query("SELECT course, exam_date FROM exams WHERE user_id = $1 AND exam_date >= $2 ORDER BY exam_date ASC LIMIT 10", [req.userId, today]),
       computeGrades(req.userId),
@@ -166,10 +166,11 @@ router.post("/chat", async (req, res) => {
       pool.query("SELECT date, reason FROM college_holidays WHERE user_id = $1 ORDER BY date ASC", [req.userId]).catch(() => ({ rows: [] })),
     ]);
 
-    const records = attendanceRes.rows;
-    const total = records.length;
-    const present = records.filter((r) => r.status === "present").length;
-    const halfDay = records.filter((r) => r.status === "half_day").length;
+    const attCounts = { present: 0, absent: 0, half_day: 0 };
+    for (const row of attendanceRes.rows) attCounts[row.status] = row.count;
+    const present = attCounts.present;
+    const halfDay = attCounts.half_day;
+    const total = present + attCounts.absent + halfDay;
     const pct = total ? Math.round(((present + halfDay * 0.5) / total) * 1000) / 10 : null;
 
     const subsList = subsRes.rows || [];
@@ -284,20 +285,41 @@ Infer the year from context if the timetable only shows day/month; assume the ne
     if (!Array.isArray(exams)) exams = [];
 
     const pool = getPool();
-    const inserted = [];
-    for (const e of exams) {
-      if (!e.course || !e.date) continue;
-      const examResult = await pool.query(
-        `INSERT INTO exams (user_id, course, exam_date, exam_time, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [req.userId, e.course, e.date, e.time || "", e.notes || ""]
-      );
-      inserted.push(examResult.rows[0]);
 
-      await pool.query(
-        `INSERT INTO todos (user_id, text, date, priority, source) VALUES ($1, $2, $3, 'urgent', 'exam')`,
-        [req.userId, `Exam: ${e.course}${e.time ? ` (${e.time})` : ""}`, e.date]
-      );
+    const validExams = exams.filter((e) => e.course && e.date);
+    if (validExams.length === 0) {
+      return res.json({ exams: [], count: 0 });
     }
+
+    const dateArr = validExams.map((e) => e.date);
+
+    // Insert all exams in one round-trip...
+    const examResult = await pool.query(
+      `INSERT INTO exams (user_id, course, exam_date, exam_time, notes)
+       SELECT $1, course, exam_date, exam_time, notes
+       FROM unnest($2::text[], $3::date[], $4::text[], $5::text[]) AS t(course, exam_date, exam_time, notes)
+       RETURNING *`,
+      [
+        req.userId,
+        validExams.map((e) => e.course),
+        dateArr,
+        validExams.map((e) => e.time || ""),
+        validExams.map((e) => e.notes || ""),
+      ]
+    );
+    const inserted = examResult.rows;
+
+    // ...and their matching urgent "Exam: <course>" todos in a second.
+    await pool.query(
+      `INSERT INTO todos (user_id, text, date, priority, source)
+       SELECT $1, txt, d, 'urgent', 'exam'
+       FROM unnest($2::text[], $3::date[]) AS t(txt, d)`,
+      [
+        req.userId,
+        validExams.map((e) => `Exam: ${e.course}${e.time ? ` (${e.time})` : ""}`),
+        dateArr,
+      ]
+    );
 
     res.json({ exams: inserted, count: inserted.length });
   } catch (err) {

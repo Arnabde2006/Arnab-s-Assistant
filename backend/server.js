@@ -3,6 +3,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
 import rateLimit from "express-rate-limit";
 import { connectDB } from "./db.js";
 import authRoutes from "./routes/auth.js";
@@ -38,6 +39,18 @@ const app = express();
 
 // Trust reverse proxy (e.g. Render, Vercel, Nginx, Cloudflare) so rate limiters retrieve actual client IPs.
 app.set("trust proxy", 1);
+
+// Gzip/deflate responses to cut JSON payload size over the wire. The filter
+// skips Server-Sent Events (the AI chat stream) so its chunks aren't buffered.
+app.use(
+  compression({
+    filter: (req, res) => {
+      const type = res.getHeader("Content-Type");
+      if (type && String(type).includes("text/event-stream")) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // Sets standard security headers (X-Content-Type-Options, etc). CSP is left
 // off since this is a pure JSON API with no HTML views to protect.

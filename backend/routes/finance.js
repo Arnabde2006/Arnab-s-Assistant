@@ -177,36 +177,45 @@ Rules: for a bank statement, a debit/withdrawal is "expense" and a credit/deposi
   }
 
   const pool = getPool();
-  const inserted = [];
-  let skippedCount = 0;
 
-  for (const e of validEntries) {
-    const cat = isValidCategory(e.category) ? e.category : "other";
-    const merchantStr = (e.merchant || "").trim();
+  // Build per-column arrays once. Dedup — against existing rows AND within this
+  // same batch — is done in SQL so date/amount/type/merchant comparisons use
+  // Postgres semantics (e.g. numeric equality) instead of fragile JS string keys.
+  const dateArr = validEntries.map((e) => e.date);
+  const amountArr = validEntries.map((e) => e.amount);
+  const typeArr = validEntries.map((e) => e.type);
+  const catArr = validEntries.map((e) => (isValidCategory(e.category) ? e.category : "other"));
+  const merchantArr = validEntries.map((e) => (e.merchant || "").trim());
 
-    const existing = await pool.query(
-      `SELECT id FROM transactions 
-       WHERE user_id = $1 AND date = $2 AND amount = $3 AND type = $4 AND LOWER(merchant) = LOWER($5)`,
-      [req.userId, e.date, e.amount, e.type, merchantStr]
-    );
+  // A candidate is inserted only if (a) no existing transaction matches it and
+  // (b) it's the first occurrence of that key within this batch — mirroring the
+  // old row-by-row loop, where each insert became visible to the next lookup.
+  const result = await pool.query(
+    `INSERT INTO transactions (user_id, date, amount, type, category, merchant, source)
+     SELECT $1, c.date, c.amount, c.type, c.category, c.merchant, 'upload'
+     FROM unnest($2::date[], $3::numeric[], $4::text[], $5::text[], $6::text[])
+          WITH ORDINALITY AS c(date, amount, type, category, merchant, ord)
+     WHERE NOT EXISTS (
+       SELECT 1 FROM transactions t
+       WHERE t.user_id = $1 AND t.date = c.date AND t.amount = c.amount
+         AND t.type = c.type AND LOWER(t.merchant) = LOWER(c.merchant)
+     )
+     AND c.ord = (
+       SELECT MIN(c2.ord)
+       FROM unnest($2::date[], $3::numeric[], $4::text[], $5::text[], $6::text[])
+            WITH ORDINALITY AS c2(date, amount, type, category, merchant, ord)
+       WHERE c2.date = c.date AND c2.amount = c.amount AND c2.type = c.type
+         AND LOWER(c2.merchant) = LOWER(c.merchant)
+     )
+     RETURNING *`,
+    [req.userId, dateArr, amountArr, typeArr, catArr, merchantArr]
+  );
 
-    if (existing.rows.length > 0) {
-      skippedCount++;
-      continue;
-    }
-
-    const result = await pool.query(
-      `INSERT INTO transactions (user_id, date, amount, type, category, merchant, source)
-       VALUES ($1, $2, $3, $4, $5, $6, 'upload') RETURNING *`,
-      [req.userId, e.date, e.amount, e.type, cat, merchantStr]
-    );
-    inserted.push(result.rows[0]);
-  }
-
+  const inserted = result.rows;
   res.json({
     transactions: inserted,
     count: inserted.length,
-    skippedCount,
+    skippedCount: validEntries.length - inserted.length,
   });
 }));
 

@@ -134,8 +134,13 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   remind_days_before INTEGER NOT NULL DEFAULT 3,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'paused')),
   notes TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- For DBs created before subscription reordering existed (previously ensured at
+-- request time in routes/subscriptions.js; now part of the migration).
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS nptel_courses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -145,8 +150,13 @@ CREATE TABLE IF NOT EXISTS nptel_courses (
   start_date DATE NOT NULL DEFAULT CURRENT_DATE,
   assignment_due_day INTEGER NOT NULL DEFAULT 3, -- 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
   exam_date DATE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- For DBs created before NPTEL course reordering existed (previously ensured at
+-- request time in routes/nptel.js; now part of the migration).
+ALTER TABLE nptel_courses ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS nptel_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -161,7 +171,10 @@ CREATE TABLE IF NOT EXISTS nptel_assignments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_subjects_user ON subjects(user_id);
-CREATE INDEX IF NOT EXISTS idx_day_attendance_user ON day_attendance(user_id);
+-- (user_id, date) covers plain user_id lookups AND the date-range + ORDER BY date
+-- queries in routes/attendance.js, plus the dashboard and attendance-summary reads.
+CREATE INDEX IF NOT EXISTS idx_day_attendance_user_date ON day_attendance(user_id, date);
+DROP INDEX IF EXISTS idx_day_attendance_user;
 CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_timetable_user ON timetable_slots(user_id);
 CREATE INDEX IF NOT EXISTS idx_exams_user ON exams(user_id, exam_date);
@@ -172,3 +185,5 @@ CREATE INDEX IF NOT EXISTS idx_debts_user ON debts(user_id, settled);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_nptel_courses_user ON nptel_courses(user_id);
 CREATE INDEX IF NOT EXISTS idx_nptel_assignments_course ON nptel_assignments(course_id, due_date);
+-- (user_id, due_date) serves the user-scoped assignment reads in routes/nptel.js and routes/ai.js.
+CREATE INDEX IF NOT EXISTS idx_nptel_assignments_user_due ON nptel_assignments(user_id, due_date);

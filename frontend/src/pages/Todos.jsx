@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import Switch from "../components/Switch.jsx";
@@ -124,6 +124,76 @@ export default function Todos() {
     refresh().catch(() => {});
   }, []);
 
+  // Active subscriptions mapping by date
+  const activeSubs = useMemo(
+    () => subscriptions.filter((s) => s.status === "active"),
+    [subscriptions]
+  );
+
+  // Build the day range and precompute date→events lookups ONCE per data change,
+  // instead of scanning every todo / subscription / assignment inside the render
+  // loop for each of the ~60 days (previously O(days × items) every render).
+  // These hooks must run on every render (before any early return) to satisfy
+  // the Rules of Hooks; during loading the source arrays are empty so they're cheap.
+  const { days, todosByDate, subEventsByDate, nptelByDate } = useMemo(() => {
+    const furthestTodoDate = todos.reduce((max, t) => (t.date > max ? t.date : max), rangeStart);
+    const furthestSubDate = activeSubs.reduce((max, s) => {
+      const renewal = s.renewal_date ? s.renewal_date.split("T")[0] : "";
+      return renewal > max ? renewal : max;
+    }, rangeStart);
+    const maxDateStr = furthestTodoDate > furthestSubDate ? furthestTodoDate : furthestSubDate;
+    const daysCount = Math.max(
+      14,
+      Math.round((new Date(maxDateStr) - new Date(rangeStart)) / 86400000) + 1
+    );
+
+    const days = [];
+    for (let i = 0; i < daysCount; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      days.push(toISO(d));
+    }
+
+    const todosByDate = new Map();
+    for (const t of todos) {
+      if (!todosByDate.has(t.date)) todosByDate.set(t.date, []);
+      todosByDate.get(t.date).push(t);
+    }
+
+    const subEventsByDate = new Map();
+    const pushSubEvent = (date, evt) => {
+      if (!subEventsByDate.has(date)) subEventsByDate.set(date, []);
+      subEventsByDate.get(date).push(evt);
+    };
+    for (const sub of activeSubs) {
+      if (!sub.renewal_date) continue;
+      const renDateStr = sub.renewal_date.split("T")[0];
+      const isTrial = sub.plan_type === "free_trial";
+      pushSubEvent(renDateStr, { sub, type: "renewal_day", isTrial });
+      const renDateObj = new Date(renDateStr + "T00:00:00");
+      const remindDateObj = new Date(renDateObj);
+      remindDateObj.setDate(remindDateObj.getDate() - (sub.remind_days_before || 3));
+      const remindDateStr = toISO(remindDateObj);
+      // A 0-day reminder collapses onto the renewal day — original showed only
+      // the renewal event in that case, so skip the duplicate reminder.
+      if (remindDateStr !== renDateStr) {
+        pushSubEvent(remindDateStr, { sub, type: "reminder_day", isTrial });
+      }
+    }
+
+    const nptelByDate = new Map();
+    for (const a of nptelAssignments) {
+      if (!a.due_date) continue;
+      const key = a.due_date.split("T")[0];
+      if (!nptelByDate.has(key)) nptelByDate.set(key, []);
+      nptelByDate.get(key).push(a);
+    }
+
+    return { days, todosByDate, subEventsByDate, nptelByDate };
+  }, [todos, activeSubs, nptelAssignments, rangeStart]);
+
+  const holidayMap = useMemo(() => new Map(holidays.map((h) => [h.date, h])), [holidays]);
+
   if (pageLoading) {
     return (
       <div>
@@ -182,31 +252,6 @@ export default function Todos() {
     refresh();
   }
 
-  // Active subscriptions mapping by date
-  const activeSubs = subscriptions.filter((s) => s.status === "active");
-
-  // Determine furthest date between todos & subscriptions
-  const furthestTodoDate = todos.reduce((max, t) => (t.date > max ? t.date : max), rangeStart);
-  const furthestSubDate = activeSubs.reduce((max, s) => {
-    const renewal = s.renewal_date ? s.renewal_date.split("T")[0] : "";
-    return renewal > max ? renewal : max;
-  }, rangeStart);
-
-  const maxDateStr = furthestTodoDate > furthestSubDate ? furthestTodoDate : furthestSubDate;
-  const daysCount = Math.max(
-    14,
-    Math.round((new Date(maxDateStr) - new Date(rangeStart)) / 86400000) + 1
-  );
-
-  const days = [];
-  for (let i = 0; i < daysCount; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    days.push(toISO(d));
-  }
-
-  const holidayMap = new Map(holidays.map((h) => [h.date, h]));
-
   return (
     <div>
       {/* Edit Modal */}
@@ -244,32 +289,16 @@ export default function Todos() {
 
       <div className="planner">
         {days.map((date) => {
-          const dayTodos = todos.filter((t) => t.date === date);
+          const dayTodos = todosByDate.get(date) || [];
           const holiday = holidayMap.get(date);
           const isHoliday = showHolidays && !!holiday;
           const { weekday, num, month } = formatDay(date);
 
-          // Find active subscription events for this date
-          const subEvents = [];
-          for (const sub of activeSubs) {
-            if (!sub.renewal_date) continue;
-            const renDateStr = sub.renewal_date.split("T")[0];
+          // Subscription (renewal + reminder) events for this date, precomputed above.
+          const subEvents = subEventsByDate.get(date) || [];
 
-            if (renDateStr === date) {
-              subEvents.push({ sub, type: "renewal_day", isTrial: sub.plan_type === "free_trial" });
-            } else {
-              const renDateObj = new Date(renDateStr + "T00:00:00");
-              const remindDateObj = new Date(renDateObj);
-              remindDateObj.setDate(remindDateObj.getDate() - (sub.remind_days_before || 3));
-              const remindDateStr = toISO(remindDateObj);
-              if (remindDateStr === date) {
-                subEvents.push({ sub, type: "reminder_day", isTrial: sub.plan_type === "free_trial" });
-              }
-            }
-          }
-
-          // Find NPTEL assignment events for this date
-          const dayNptelAssignments = nptelAssignments.filter((a) => a.due_date && a.due_date.split("T")[0] === date);
+          // NPTEL assignment events for this date, precomputed above.
+          const dayNptelAssignments = nptelByDate.get(date) || [];
 
           const hasItems = dayTodos.length > 0 || subEvents.length > 0 || dayNptelAssignments.length > 0;
 

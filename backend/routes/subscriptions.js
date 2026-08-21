@@ -8,37 +8,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 const router = express.Router();
 router.use(requireAuth);
 
-// Ensure table exists safely on route load if migration wasn't manually run
-let tableEnsured = false;
-async function ensureTable() {
-  if (tableEnsured) return;
-  const pool = getPool();
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS subscriptions (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      plan_type TEXT NOT NULL DEFAULT 'free_trial' CHECK (plan_type IN ('free_trial', 'paid')),
-      amount NUMERIC NOT NULL DEFAULT 0,
-      currency TEXT NOT NULL DEFAULT '₹',
-      billing_cycle TEXT NOT NULL DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly', 'yearly', 'one_time')),
-      start_date DATE NOT NULL DEFAULT CURRENT_DATE,
-      renewal_date DATE NOT NULL,
-      remind_days_before INTEGER NOT NULL DEFAULT 3,
-      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'cancelled', 'paused')),
-      notes TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
-    CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id, status);
-  `);
-  tableEnsured = true;
-}
-
 // ─── GET /api/subscriptions ──────────────────────────────────────────────────
 router.get("/", asyncHandler(async (req, res) => {
-  await ensureTable();
   const pool = getPool();
   const result = await pool.query(
     `SELECT *,
@@ -56,26 +27,27 @@ router.get("/", asyncHandler(async (req, res) => {
 
 // ─── PUT /api/subscriptions/reorder ─────────────────────────────────────────
 router.put("/reorder", asyncHandler(async (req, res) => {
-  await ensureTable();
   const { subIds } = req.body;
   if (!Array.isArray(subIds)) {
     return res.status(400).json({ error: "subIds array is required" });
   }
 
   const pool = getPool();
-  for (let i = 0; i < subIds.length; i++) {
-    await pool.query(
-      "UPDATE subscriptions SET sort_order = $1 WHERE id = $2 AND user_id = $3",
-      [i, subIds[i], req.userId]
-    );
-  }
+  // One round-trip: map each id to its position via unnest WITH ORDINALITY
+  // (1-based, so subtract 1 to keep the original 0-based sort_order).
+  await pool.query(
+    `UPDATE subscriptions AS s
+       SET sort_order = ids.ord - 1
+     FROM unnest($1::uuid[]) WITH ORDINALITY AS ids(id, ord)
+     WHERE s.id = ids.id AND s.user_id = $2`,
+    [subIds, req.userId]
+  );
 
   res.json({ success: true });
 }));
 
 // ─── POST /api/subscriptions ─────────────────────────────────────────────────
 router.post("/", asyncHandler(async (req, res) => {
-  await ensureTable();
   const { name, plan_type, amount, currency, billing_cycle, start_date, renewal_date, remind_days_before, notes } = req.body;
 
   if (!name || !renewal_date) {
@@ -107,7 +79,6 @@ router.post("/", asyncHandler(async (req, res) => {
 
 // ─── PUT /api/subscriptions/:id ──────────────────────────────────────────────
 router.put("/:id", asyncHandler(async (req, res) => {
-  await ensureTable();
   const { name, plan_type, amount, currency, billing_cycle, renewal_date, remind_days_before, status, notes } = req.body;
 
   const pool = getPool();
@@ -148,7 +119,6 @@ router.put("/:id", asyncHandler(async (req, res) => {
 
 // ─── DELETE /api/subscriptions/:id ───────────────────────────────────────────
 router.delete("/:id", asyncHandler(async (req, res) => {
-  await ensureTable();
   const pool = getPool();
   await pool.query("DELETE FROM subscriptions WHERE id = $1 AND user_id = $2", [req.params.id, req.userId]);
   res.json({ success: true });
@@ -156,38 +126,44 @@ router.delete("/:id", asyncHandler(async (req, res) => {
 
 // ─── POST /api/subscriptions/bulk ───────────────────────────────────────────
 router.post("/bulk", asyncHandler(async (req, res) => {
-  await ensureTable();
   const { items } = req.body;
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Items array is required" });
   }
 
   const pool = getPool();
-  const created = [];
 
-  for (const item of items) {
-    if (!item.name || !item.renewal_date) continue;
-    const result = await pool.query(
-      `INSERT INTO subscriptions
-       (user_id, name, plan_type, amount, currency, billing_cycle, start_date, renewal_date, remind_days_before, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, CURRENT_DATE), $8, $9, $10)
-       RETURNING *, (renewal_date - CURRENT_DATE) AS days_remaining`,
-      [
-        req.userId,
-        item.name.trim(),
-        item.plan_type || "free_trial",
-        item.amount !== undefined && item.amount !== "" ? Number(item.amount) : 0,
-        item.currency || "₹",
-        item.billing_cycle || "monthly",
-        item.start_date || null,
-        item.renewal_date,
-        item.remind_days_before !== undefined && item.remind_days_before !== "" ? Number(item.remind_days_before) : 3,
-        item.notes ? item.notes.trim() : "",
-      ]
-    );
-    if (result.rows[0]) created.push(result.rows[0]);
+  // Keep only valid rows, then insert them all in one multi-row statement.
+  // unnest turns the per-column arrays into rows; defaults match the old loop.
+  const valid = items.filter((item) => item.name && item.renewal_date);
+  if (valid.length === 0) {
+    return res.status(201).json({ created: [], count: 0 });
   }
 
+  const result = await pool.query(
+    `INSERT INTO subscriptions
+       (user_id, name, plan_type, amount, currency, billing_cycle, start_date, renewal_date, remind_days_before, notes)
+     SELECT $1, name, plan_type, amount, currency, billing_cycle, COALESCE(start_date, CURRENT_DATE), renewal_date, remind_days_before, notes
+     FROM unnest(
+       $2::text[], $3::text[], $4::numeric[], $5::text[], $6::text[],
+       $7::date[], $8::date[], $9::int[], $10::text[]
+     ) AS t(name, plan_type, amount, currency, billing_cycle, start_date, renewal_date, remind_days_before, notes)
+     RETURNING *, (renewal_date - CURRENT_DATE) AS days_remaining`,
+    [
+      req.userId,
+      valid.map((i) => i.name.trim()),
+      valid.map((i) => i.plan_type || "free_trial"),
+      valid.map((i) => (i.amount !== undefined && i.amount !== "" ? Number(i.amount) : 0)),
+      valid.map((i) => i.currency || "₹"),
+      valid.map((i) => i.billing_cycle || "monthly"),
+      valid.map((i) => i.start_date || null),
+      valid.map((i) => i.renewal_date),
+      valid.map((i) => (i.remind_days_before !== undefined && i.remind_days_before !== "" ? Number(i.remind_days_before) : 3)),
+      valid.map((i) => (i.notes ? i.notes.trim() : "")),
+    ]
+  );
+
+  const created = result.rows;
   res.status(201).json({ created, count: created.length });
 }));
 

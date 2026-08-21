@@ -61,7 +61,10 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const pool = getPool();
-    const result = await pool.query("SELECT * FROM users WHERE email = $1", [(email || "").toLowerCase()]);
+    const result = await pool.query(
+      "SELECT id, name, email, password_hash, attendance_goal, monthly_budget, view_token FROM users WHERE email = $1",
+      [(email || "").toLowerCase()]
+    );
     const user = result.rows[0];
     if (!user) {
       return res.status(401).json({ error: "Invalid email or password" });

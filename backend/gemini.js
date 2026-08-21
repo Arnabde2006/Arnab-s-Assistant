@@ -51,6 +51,33 @@ const OPENROUTER_TEXT_MODELS = envList("OPENROUTER_TEXT_MODELS", [
   "meta-llama/llama-3.3-70b-instruct",
 ]);
 
+// ─── Timeouts ───────────────────────────────────────────────────────────────
+// Without these, a provider that accepts the connection but never responds (or
+// stalls mid-stream) would hold the request — and any open SSE connection to the
+// browser — indefinitely. We use an *inactivity* timeout rather than a hard total
+// timeout so a healthy long answer is never cut off: the clock resets every time
+// a chunk arrives. Both windows are overridable via .env.
+const AI_REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 45000; // non-streaming (JSON/vision extraction)
+const AI_STREAM_IDLE_TIMEOUT_MS = Number(process.env.AI_STREAM_IDLE_TIMEOUT_MS) || 30000; // max gap between streamed chunks / to first byte
+
+/**
+ * fetch() wrapped in an inactivity timeout. The request is aborted if no activity
+ * occurs within `idleMs` — for non-streaming calls that's the whole round-trip;
+ * for streams, call the returned `touch()` after each chunk to reset the clock.
+ * Always call `clear()` when the attempt finishes (a `finally` block) so the
+ * timer never lingers on the event loop. On timeout the fetch rejects with an
+ * AbortError, which callers treat as a provider failure and skip to the next one.
+ */
+function fetchWithIdleTimeout(url, options, idleMs) {
+  const controller = new AbortController();
+  const arm = () => setTimeout(() => controller.abort(), idleMs);
+  let timer = arm();
+  const touch = () => { clearTimeout(timer); timer = arm(); };
+  const clear = () => clearTimeout(timer);
+  const promise = fetch(url, { ...options, signal: controller.signal });
+  return { promise, touch, clear };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function hasVision(parts) {
@@ -189,12 +216,17 @@ async function tryGemini({ systemInstruction, parts, jsonMode, onChunk }) {
   let lastError = null;
 
   for (const model of GEMINI_MODELS) {
-    try {
-      const res = await fetch(geminiEndpoint(model, useStream), {
+    const { promise, touch, clear } = fetchWithIdleTimeout(
+      geminiEndpoint(model, useStream),
+      {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      });
+      },
+      useStream ? AI_STREAM_IDLE_TIMEOUT_MS : AI_REQUEST_TIMEOUT_MS
+    );
+    try {
+      const res = await promise;
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -228,6 +260,7 @@ async function tryGemini({ systemInstruction, parts, jsonMode, onChunk }) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        touch(); // data arrived — reset the inactivity clock
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop();
@@ -248,6 +281,11 @@ async function tryGemini({ systemInstruction, parts, jsonMode, onChunk }) {
       }
       return full;
     } catch (err) {
+      if (err.name === "AbortError") {
+        lastError = new Error("Gemini timed out (no response)");
+        console.warn(`[Gemini] Model ${model} timed out. Moving on...`);
+        break; // stalled provider — don't burn the timeout budget on its other models
+      }
       lastError = err;
       const isRetryable =
         err.message?.toLowerCase().includes("quota") ||
@@ -255,6 +293,8 @@ async function tryGemini({ systemInstruction, parts, jsonMode, onChunk }) {
         err.message?.toLowerCase().includes("not found");
       if (isRetryable) continue;
       throw err;
+    } finally {
+      clear();
     }
   }
 
@@ -290,23 +330,28 @@ async function tryGroq({ systemInstruction, parts, jsonMode, onChunk }) {
 
   let lastErr = null;
   for (const model of models) {
-    try {
-      const useStream = !!onChunk && !jsonMode && !isVision;
-      const body = {
-        model,
-        messages,
-        stream: useStream,
-        ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      };
+    const useStream = !!onChunk && !jsonMode && !isVision;
+    const body = {
+      model,
+      messages,
+      stream: useStream,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+    };
 
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const { promise, touch, clear } = fetchWithIdleTimeout(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
-      });
+      },
+      useStream ? AI_STREAM_IDLE_TIMEOUT_MS : AI_REQUEST_TIMEOUT_MS
+    );
+    try {
+      const res = await promise;
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -328,6 +373,7 @@ async function tryGroq({ systemInstruction, parts, jsonMode, onChunk }) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        touch();
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop();
@@ -348,7 +394,13 @@ async function tryGroq({ systemInstruction, parts, jsonMode, onChunk }) {
       return full;
     } catch (err) {
       lastErr = err;
+      if (err.name === "AbortError") {
+        console.warn(`[Groq] Model ${model} timed out. Moving on...`);
+        break;
+      }
       console.warn(`[Groq] Model ${model} failed: ${err.message}. Trying next...`);
+    } finally {
+      clear();
     }
   }
 
@@ -382,17 +434,18 @@ async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
 
   let lastErr = null;
   for (const model of models) {
-    try {
-      const useStream = !!onChunk && !jsonMode;
-      const body = {
-        model,
-        messages,
-        max_tokens: 2048, // capped — free tier can't afford 65536
-        stream: useStream,
-        ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      };
+    const useStream = !!onChunk && !jsonMode;
+    const body = {
+      model,
+      messages,
+      max_tokens: 2048, // capped — free tier can't afford 65536
+      stream: useStream,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+    };
 
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const { promise, touch, clear } = fetchWithIdleTimeout(
+      "https://openrouter.ai/api/v1/chat/completions",
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -401,7 +454,11 @@ async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
           "X-Title": "Arnab's Assistant",
         },
         body: JSON.stringify(body),
-      });
+      },
+      useStream ? AI_STREAM_IDLE_TIMEOUT_MS : AI_REQUEST_TIMEOUT_MS
+    );
+    try {
+      const res = await promise;
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -423,6 +480,7 @@ async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        touch();
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop();
@@ -443,7 +501,13 @@ async function tryOpenRouter({ systemInstruction, parts, jsonMode, onChunk }) {
       return full;
     } catch (err) {
       lastErr = err;
+      if (err.name === "AbortError") {
+        console.warn(`[OpenRouter] Model ${model} timed out. Moving on...`);
+        break;
+      }
       console.warn(`[OpenRouter] Model ${model} failed: ${err.message}. Trying next...`);
+    } finally {
+      clear();
     }
   }
 
