@@ -3,7 +3,9 @@ import { api } from "../api/client.js";
 import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useDialog } from "../hooks/useDialog.js";
 import { useToast } from "../context/ToastContext.jsx";
+import { useConfirm } from "../context/ConfirmContext.jsx";
 import ReorderControls from "../components/ReorderControls.jsx";
+import { toISO, formatMediumDate as formatDateDisplay } from "../utils/format.js";
 import {
   CreditCard,
   Upload,
@@ -21,20 +23,6 @@ import {
   Loader2,
   GripVertical
 } from "lucide-react";
-
-function pad(n) {
-  return String(n).padStart(2, "0");
-}
-
-function toISO(d) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function formatDateDisplay(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
 
 export default function Subscriptions() {
   const [subscriptions, setSubscriptions] = useState([]);
@@ -69,6 +57,7 @@ export default function Subscriptions() {
   const importDialog = useDialog(showMultiModal, () => setShowMultiModal(false));
   const [savingMulti, setSavingMulti] = useState(false);
   const toast = useToast();
+  const confirm = useConfirm();
   useLoadAnnounce(
     loading,
     "Loading subscriptions",
@@ -369,12 +358,17 @@ export default function Subscriptions() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this subscription?")) return;
+    const ok = await confirm({
+      title: "Delete this subscription?",
+      message: "It will be removed from your list. This cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     try {
       await api.del(`/subscriptions/${id}`);
       loadSubscriptions();
     } catch (err) {
-      alert(err.message || "Failed to delete subscription");
+      toast.error(`Couldn't delete the subscription — ${err.message}`);
     }
   };
 

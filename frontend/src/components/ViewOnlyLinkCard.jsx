@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import { Link2, Eye, Copy, Check, RefreshCw, ExternalLink, ShieldCheck, Share2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useToast } from "../context/ToastContext.jsx";
+import { useConfirm, CONFIRM_REGENERATE_VIEW_LINK } from "../context/ConfirmContext.jsx";
 import { api } from "../api/client.js";
 
 export default function ViewOnlyLinkCard({ compact = false }) {
   const { user, setUser } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -25,9 +27,7 @@ export default function ViewOnlyLinkCard({ compact = false }) {
   }
 
   async function handleRegenerate() {
-    if (!window.confirm("This will invalidate your old view-only link. Anyone you shared it with will lose access. Continue?")) {
-      return;
-    }
+    if (!(await confirm(CONFIRM_REGENERATE_VIEW_LINK))) return;
     setLoading(true);
     try {
       const data = await api.post("/auth/view-token/regenerate", {});

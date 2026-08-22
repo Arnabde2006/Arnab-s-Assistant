@@ -1,18 +1,20 @@
-import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { api } from "../api/client.js";
 import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import { useDialog } from "../hooks/useDialog.js";
 import { useToast } from "../context/ToastContext.jsx";
+import { useConfirm } from "../context/ConfirmContext.jsx";
 import { fileToBase64, fileToArrayBuffer } from "../utils/fileToBase64.js";
 import { useAuth } from "../context/AuthContext.jsx";
-import FileUpload from "../components/FileUpload.jsx";
-import { Pencil, Trash2, Lock } from "lucide-react";
+import { pad, rupees, parseLocalDate } from "../utils/format.js";
+import FinanceOverview from "../components/finance/FinanceOverview.jsx";
+import FinanceImportModal from "../components/finance/FinanceImportModal.jsx";
+import FinanceTransactionList from "../components/finance/FinanceTransactionList.jsx";
 
 async function extractPdfText(arrayBuffer, password = "") {
   if (!window.pdfjsLib) {
     throw new Error("PDF parser library is loading. Please try again in a moment.");
   }
-  // Create a copy of arrayBuffer because PDF.js worker detaches the underlying buffer
   const bufferCopy = arrayBuffer.slice(0);
   const loadingTask = window.pdfjsLib.getDocument({
     data: new Uint8Array(bufferCopy),
@@ -44,17 +46,6 @@ const CATEGORY_LABELS = {
 
 const MONTH_NAMES_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function rupees(n) {
-  return `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-}
-
-function formatNice(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  const now = new Date();
-  const showYear = d.getFullYear() !== now.getFullYear();
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", ...(showYear ? { year: "numeric" } : {}) });
-}
-
 function formatMonthName(monthStr) {
   if (!monthStr) return "";
   const [y, m] = monthStr.split("-");
@@ -66,7 +57,7 @@ function shiftMonth(monthStr, delta) {
   const [y, m] = monthStr.split("-");
   const date = new Date(Number(y), Number(m) - 1 + delta, 1);
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const month = pad(date.getMonth() + 1);
   return `${year}-${month}`;
 }
 
@@ -171,7 +162,7 @@ function ThemeMonthPicker({ value, onChange }) {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6, marginBottom: 10 }}>
             {MONTH_NAMES_SHORT.map((mShort, idx) => {
-              const mNum = String(idx + 1).padStart(2, "0");
+              const mNum = pad(idx + 1);
               const monthVal = `${year}-${mNum}`;
               const isSelected = selectedY === String(year) && selectedM === mNum;
               const isCurrent = new Date().toISOString().slice(0, 7) === monthVal;
@@ -227,7 +218,7 @@ export default function Finance() {
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [txFilter, setTxFilter] = useState("all"); // "all" or "month"
+  const [txFilter, setTxFilter] = useState("all");
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkCategory, setBulkCategory] = useState("");
@@ -235,7 +226,14 @@ export default function Finance() {
 
   const currentMonthStr = new Date().toISOString().slice(0, 7);
 
-  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: "", type: "expense", category: "food", merchant: "", notes: "" });
+  const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    amount: "",
+    type: "expense",
+    category: "food",
+    merchant: "",
+    notes: "",
+  });
 
   const [file, setFile] = useState(null);
   const [uploadLoading, setUploadLoading] = useState(false);
@@ -249,8 +247,6 @@ export default function Finance() {
   const [pendingFile, setPendingFile] = useState(null);
   const [pendingBuffer, setPendingBuffer] = useState(null);
 
-  // Shared by the Cancel button and by Escape, so dismissing the dialog either way
-  // discards the pending upload instead of leaving it half-armed in state.
   const cancelPasswordModal = useCallback(() => {
     setShowPasswordModal(false);
     setPendingFile(null);
@@ -264,14 +260,9 @@ export default function Finance() {
 
   const [loadError, setLoadError] = useState("");
   const { run } = useAsyncAction();
-  // Used directly by the handlers that already own a `disabled` flag, where
-  // run()'s extra re-entrancy guard would only risk a silent no-op.
   const toast = useToast();
+  const confirm = useConfirm();
 
-  // The summary is month-specific (server aggregates by month); the transaction
-  // list is not — it's the full history, filtered to a month client-side below.
-  // So switching months only needs to refetch the summary, not re-download every
-  // transaction each time.
   const refreshSummary = useCallback(async (m) => {
     const sum = await api.get(`/finance/summary?month=${m}`);
     setSummary(sum);
@@ -282,7 +273,6 @@ export default function Finance() {
     setTransactions(tx.transactions);
   }, []);
 
-  // Full refresh after a mutation: the affected month's summary + the shared list.
   const refresh = useCallback(
     async (m = selectedMonth) => {
       await Promise.all([refreshSummary(m), refreshTransactions()]);
@@ -290,24 +280,18 @@ export default function Finance() {
     [selectedMonth, refreshSummary, refreshTransactions]
   );
 
-  // Transactions are fetched once on mount (month-independent)…
   useEffect(() => {
-    // Surface a failed load instead of silently rendering an empty ledger — a
-    // blank page and a ₹0 balance look identical to "you spent nothing".
     refreshTransactions().catch((err) =>
       setLoadError(err.message || "Couldn't load your transactions.")
     );
   }, [refreshTransactions]);
 
-  // …while the summary refetches whenever the selected month changes.
   useEffect(() => {
     refreshSummary(selectedMonth).catch((err) =>
       setLoadError(err.message || "Couldn't load this month's summary.")
     );
   }, [selectedMonth, refreshSummary]);
 
-  // Retry both halves — the banner doesn't distinguish which one failed, and
-  // refetching the pair is cheap next to leaving the page half-populated.
   const retryLoad = useCallback(() => {
     setLoadError("");
     Promise.all([refreshTransactions(), refreshSummary(selectedMonth)]).catch((err) =>
@@ -327,23 +311,29 @@ export default function Finance() {
     await run(() => refresh(selectedMonth), { errorMessage: "Saved, but the totals may be out of date" });
   }
 
-  const updateTransaction = useCallback(async (id, patch) => {
-    const { ok } = await run(() => api.put(`/finance/transactions/${id}`, patch), {
-      errorMessage: "Couldn't save that change",
-    });
-    if (ok) {
-      await run(() => refresh(selectedMonth), { errorMessage: "Saved, but the totals may be out of date" });
-    }
-  }, [run, refresh, selectedMonth]);
+  const updateTransaction = useCallback(
+    async (id, patch) => {
+      const { ok } = await run(() => api.put(`/finance/transactions/${id}`, patch), {
+        errorMessage: "Couldn't save that change",
+      });
+      if (ok) {
+        await run(() => refresh(selectedMonth), { errorMessage: "Saved, but the totals may be out of date" });
+      }
+    },
+    [run, refresh, selectedMonth]
+  );
 
-  const removeTransaction = useCallback(async (id) => {
-    const { ok } = await run(() => api.del(`/finance/transactions/${id}`), {
-      errorMessage: "Couldn't delete that transaction",
-    });
-    if (!ok) return;
-    setSelectedIds((prev) => prev.filter((i) => i !== id));
-    await run(() => refresh(selectedMonth), { errorMessage: "Deleted, but the totals may be out of date" });
-  }, [run, refresh, selectedMonth]);
+  const removeTransaction = useCallback(
+    async (id) => {
+      const { ok } = await run(() => api.del(`/finance/transactions/${id}`), {
+        errorMessage: "Couldn't delete that transaction",
+      });
+      if (!ok) return;
+      setSelectedIds((prev) => prev.filter((i) => i !== id));
+      await run(() => refresh(selectedMonth), { errorMessage: "Deleted, but the totals may be out of date" });
+    },
+    [run, refresh, selectedMonth]
+  );
 
   async function uploadStatement(e, providedPassword = null) {
     if (e) e.preventDefault();
@@ -371,7 +361,6 @@ export default function Finance() {
         let pdfText;
         try {
           pdfText = await extractPdfText(buffer, pwdToTry);
-          // Password succeeded — close modal immediately
           setShowPasswordModal(false);
           setPdfPassword("");
           setPdfPasswordError("");
@@ -436,7 +425,6 @@ export default function Finance() {
     }
   }
 
-  const maxCategory = summary?.categories?.[0]?.amount || 1;
   const filteredTransactions = useMemo(
     () =>
       txFilter === "month"
@@ -444,6 +432,7 @@ export default function Finance() {
         : transactions,
     [transactions, txFilter, selectedMonth]
   );
+
   const monthTransactionCount = useMemo(
     () => transactions.filter((t) => t.date && t.date.startsWith(selectedMonth)).length,
     [transactions, selectedMonth]
@@ -481,7 +470,6 @@ export default function Finance() {
       );
       toast.success(`Recategorised ${count} transaction${count === 1 ? "" : "s"}.`);
     } catch (err) {
-      // Keep the selection intact so the user can simply retry.
       toast.error(`Couldn't recategorise those transactions — ${err.message}`);
     } finally {
       setBulkUpdating(false);
@@ -490,7 +478,12 @@ export default function Finance() {
 
   async function handleBulkDelete() {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`Delete ${selectedIds.length} selected transaction(s)?`)) return;
+    const ok = await confirm({
+      title: `Delete ${selectedIds.length} transaction${selectedIds.length === 1 ? "" : "s"}?`,
+      message: "This cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     const count = selectedIds.length;
     setBulkUpdating(true);
     try {
@@ -556,426 +549,133 @@ export default function Finance() {
         </div>
       )}
 
-      <div className="grid grid-3" style={{ marginBottom: 20 }}>
-        <div className="card">
-          <div className="label">{isCurrentMonth ? "Spent this month" : `Spent in ${formatMonthName(selectedMonth)}`}</div>
-          <div className="stat-num">{summary ? rupees(summary.expense) : "—"}</div>
-        </div>
-        <div className="card">
-          <div className="label">{isCurrentMonth ? "Income this month" : `Income in ${formatMonthName(selectedMonth)}`}</div>
-          <div className="stat-num">{summary ? rupees(summary.income) : "—"}</div>
-        </div>
-        <div className="card">
-          <div className="label">{isCurrentMonth ? "Net this month" : `Net in ${formatMonthName(selectedMonth)}`}</div>
-          <div className="stat-num" style={{ color: summary && summary.net < 0 ? "var(--absent)" : "var(--text)" }}>
-            {summary ? rupees(summary.net) : "—"}
-          </div>
-        </div>
-      </div>
+      <FinanceOverview
+        summary={summary}
+        selectedMonth={selectedMonth}
+        formatMonthName={formatMonthName}
+        isCurrentMonth={isCurrentMonth}
+        budgetInput={budgetInput}
+        setBudgetInput={setBudgetInput}
+        budgetSaving={budgetSaving}
+        saveBudget={saveBudget}
+      />
 
       <div className="grid grid-2" style={{ marginBottom: 20 }}>
-        <div className="card">
+        {/* Add Transaction Form */}
+        <form onSubmit={addTransaction} className="card">
           <div className="label" style={{ marginBottom: 12 }}>
-            {isCurrentMonth ? "Spending by category" : `Spending in ${formatMonthName(selectedMonth)}`}
+            Add a transaction
           </div>
-          {(!summary || summary.categories.length === 0) && (
-            <div className="empty-state">No expenses logged for {formatMonthName(selectedMonth)} yet.</div>
-          )}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {summary?.categories.map((c) => (
-              <div key={c.category}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                  <span>{CATEGORY_LABELS[c.category] || c.category}</span>
-                  <span style={{ color: "var(--text-muted)" }}>{rupees(c.amount)}</span>
-                </div>
-                <div style={{ height: 6, borderRadius: 3, background: "var(--bg-elevated)", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(c.amount / maxCategory) * 100}%`, background: "var(--accent)", borderRadius: 3 }} />
-                </div>
-              </div>
-            ))}
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className={form.type === "expense" ? "btn" : "btn-ghost btn"}
+              style={{
+                background: form.type === "expense" ? "var(--absent)" : undefined,
+                borderColor: form.type === "expense" ? "var(--absent)" : undefined,
+              }}
+              onClick={() => setForm((f) => ({ ...f, type: "expense" }))}
+            >
+              Expense
+            </button>
+            <button
+              type="button"
+              className={form.type === "income" ? "btn" : "btn-ghost btn"}
+              style={{
+                background: form.type === "income" ? "var(--present)" : undefined,
+                borderColor: form.type === "income" ? "var(--present)" : undefined,
+              }}
+              onClick={() => setForm((f) => ({ ...f, type: "income" }))}
+            >
+              Income
+            </button>
           </div>
-        </div>
-
-        <div className="card">
-          <div className="label" style={{ marginBottom: 12 }}>Monthly budget</div>
-          {summary?.monthlyBudget ? (
-            <>
-              <div style={{ fontSize: 13, marginBottom: 8 }}>
-                {rupees(summary.expense)} of {rupees(summary.monthlyBudget)} spent
-                {summary.budgetRemaining >= 0
-                  ? ` · ${rupees(summary.budgetRemaining)} left`
-                  : ` · ${rupees(-summary.budgetRemaining)} over`}
-              </div>
-              <div style={{ height: 8, borderRadius: 4, background: "var(--bg-elevated)", overflow: "hidden", marginBottom: 14 }}>
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${Math.min(summary.budgetPercentUsed, 100)}%`,
-                    background: summary.budgetPercentUsed >= 100 ? "var(--absent)" : summary.budgetPercentUsed >= 80 ? "#C9A227" : "var(--present)",
-                    borderRadius: 4,
-                  }}
-                />
-              </div>
-            </>
-          ) : (
-            <p style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 14 }}>No budget set — tracking only.</p>
-          )}
-          <form onSubmit={saveBudget} style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
             <input
               className="input"
               type="number"
-              min="1"
-              placeholder="e.g. 8000"
-              value={budgetInput}
-              onChange={(e) => setBudgetInput(e.target.value)}
+              min="0.01"
+              step="0.01"
+              placeholder="Amount (₹)"
+              value={form.amount}
+              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              style={{ flex: "1 1 120px" }}
+              required
             />
-            <button className="btn" type="submit" disabled={budgetSaving}>Save</button>
-          </form>
-        </div>
-      </div>
-
-      <div className="grid grid-2" style={{ marginBottom: 20 }}>
-        <form onSubmit={addTransaction} className="card">
-          <div className="label" style={{ marginBottom: 12 }}>Add a transaction</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            <button type="button" className={form.type === "expense" ? "btn" : "btn-ghost btn"} style={{ background: form.type === "expense" ? "var(--absent)" : undefined, borderColor: form.type === "expense" ? "var(--absent)" : undefined }} onClick={() => setForm((f) => ({ ...f, type: "expense" }))}>Expense</button>
-            <button type="button" className={form.type === "income" ? "btn" : "btn-ghost btn"} style={{ background: form.type === "income" ? "var(--present)" : undefined, borderColor: form.type === "income" ? "var(--present)" : undefined }} onClick={() => setForm((f) => ({ ...f, type: "income" }))}>Income</button>
+            <input
+              className="input"
+              type="date"
+              value={form.date}
+              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+              style={{ flex: "1 1 140px" }}
+            />
           </div>
           <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            <input className="input" type="number" min="0.01" step="0.01" placeholder="Amount (₹)" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} style={{ flex: "1 1 120px" }} required />
-            <input className="input" type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} style={{ flex: "1 1 140px" }} />
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            <select className="input" value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} style={{ flex: "1 1 140px" }}>
+            <select
+              className="input"
+              value={form.category}
+              onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+              style={{ flex: "1 1 140px" }}
+            >
               {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
+                <option key={key} value={key}>
+                  {label}
+                </option>
               ))}
             </select>
-            <input className="input" placeholder="Merchant / description" value={form.merchant} onChange={(e) => setForm((f) => ({ ...f, merchant: e.target.value }))} style={{ flex: "1 1 140px" }} />
-          </div>
-          <button className="btn" type="submit" style={{ width: "100%" }}>Add</button>
-        </form>
-
-        <form onSubmit={uploadStatement} className="card">
-          <div className="label" style={{ marginBottom: 8 }}>Upload statement or UPI screenshot</div>
-          <p style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-            A bank statement PDF or a Google Pay/PhonePe/Paytm payment screenshot — transactions are auto-added and categorized, and you can edit or delete any of them below.
-            <br />
-            <span style={{ fontSize: 11, color: "var(--accent)", display: "inline-block", marginTop: 4 }}>
-              💡 <strong>Password-protected PDFs supported:</strong> If your bank statement is encrypted, simply upload it and enter your PDF password when prompted!
-            </span>
-          </p>
-          <FileUpload
-            id="finance-upload"
-            accept="image/*,application/pdf"
-            file={file}
-            onChange={setFile}
-            placeholder="Drag & drop your bank statement or UPI screenshot here, or click to browse"
-            helpText="Supports bank statement PDF or Google Pay / PhonePe / Paytm screenshot"
-          />
-          <div style={{ height: 12 }} />
-          {uploadError && <div className="error-text" style={{ marginBottom: 10 }}>{uploadError}</div>}
-          {uploadResult && (
-            <div style={{ fontSize: 12, color: "var(--present)", marginBottom: 10 }}>
-              {uploadResult.count > 0 ? `Added ${uploadResult.count} new transaction(s).` : "No new transactions to add."}
-              {uploadResult.skippedCount > 0 && ` Skipped ${uploadResult.skippedCount} existing duplicate(s).`}
-            </div>
-          )}
-          <div style={{ display: "flex", justifyContent: "center" }}>
-            <button className="btn" type="submit" disabled={uploadLoading} style={{ minWidth: 140 }}>
-              {uploadLoading ? "Reading…" : "Upload"}
-            </button>
-          </div>
-        </form>
-
-      </div>
-
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div className="label" style={{ margin: 0 }}>
-              {txFilter === "month" ? `Transactions in ${formatMonthName(selectedMonth)}` : "All transactions"}
-            </div>
-            {selectionMode && filteredTransactions.length > 0 && (
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer", color: "var(--text-muted)", userSelect: "none" }}>
-                <input
-                  type="checkbox"
-                  className="custom-checkbox"
-                  checked={
-                    filteredTransactions.length > 0 &&
-                    filteredTransactions.slice(0, 60).every((t) => selectedIds.includes(t.id))
-                  }
-                  onChange={toggleSelectAll}
-                />
-                Select All
-              </label>
-            )}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className={selectionMode ? "btn" : "btn-ghost btn"}
-              style={{ fontSize: 12, padding: "5px 12px", display: "flex", alignItems: "center", gap: 5 }}
-              onClick={() => {
-                if (selectionMode) {
-                  setSelectionMode(false);
-                  setSelectedIds([]);
-                } else {
-                  setSelectionMode(true);
-                }
-              }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 11 12 14 22 4" />
-                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-              </svg>
-              {selectionMode ? "Exit Selection" : "Bulk Edit / Select"}
-            </button>
-            <div style={{ width: 1, height: 16, background: "var(--border-strong)" }} />
-            <button
-              type="button"
-              className={txFilter === "all" ? "btn" : "btn-ghost btn"}
-              style={{ fontSize: 11, padding: "4px 10px" }}
-              onClick={() => setTxFilter("all")}
-            >
-              All ({transactions.length})
-            </button>
-            <button
-              type="button"
-              className={txFilter === "month" ? "btn" : "btn-ghost btn"}
-              style={{ fontSize: 11, padding: "4px 10px" }}
-              onClick={() => setTxFilter("month")}
-            >
-              {formatMonthName(selectedMonth)} ({monthTransactionCount})
-            </button>
-          </div>
-        </div>
-
-        {selectionMode && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justify: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-              padding: "12px 16px",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--bg-elevated)",
-              border: "1px solid var(--border-strong)",
-              boxShadow: "var(--shadow)",
-              marginBottom: 14,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  padding: "3px 10px",
-                  borderRadius: 999,
-                  background: "var(--accent-soft)",
-                  color: "var(--text)",
-                }}
-              >
-                {selectedIds.length} item(s) selected
-              </span>
-              <form onSubmit={handleBulkCategoryChange} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                <select
-                  className="input"
-                  value={bulkCategory}
-                  onChange={(e) => setBulkCategory(e.target.value)}
-                  style={{ fontSize: 12, padding: "6px 12px", width: "auto", minWidth: 160 }}
-                  required
-                >
-                  <option value="">Bulk category change to...</option>
-                  {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-                    <option key={key} value={key}>{label}</option>
-                  ))}
-                </select>
-                <button className="btn" type="submit" disabled={bulkUpdating || !bulkCategory || selectedIds.length === 0} style={{ fontSize: 12, padding: "6px 14px" }}>
-                  Apply Category
-                </button>
-              </form>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button
-                type="button"
-                className="btn-ghost btn"
-                style={{
-                  fontSize: 12,
-                  padding: "6px 12px",
-                  color: "var(--absent)",
-                  borderColor: "rgba(193, 85, 74, 0.3)",
-                  background: "rgba(193, 85, 74, 0.08)",
-                  opacity: selectedIds.length === 0 ? 0.5 : 1,
-                  cursor: selectedIds.length === 0 ? "default" : "pointer",
-                }}
-                onClick={handleBulkDelete}
-                disabled={bulkUpdating || selectedIds.length === 0}
-              >
-                Delete Selected
-              </button>
-              {selectedIds.length > 0 && (
-                <button
-                  type="button"
-                  className="btn-ghost btn"
-                  style={{ fontSize: 12, padding: "6px 12px" }}
-                  onClick={() => setSelectedIds([])}
-                >
-                  Deselect All
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {filteredTransactions.length === 0 && (
-          <div className="empty-state">
-            {txFilter === "month" ? `No transactions recorded for ${formatMonthName(selectedMonth)}.` : "No transactions yet."}
-          </div>
-        )}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {filteredTransactions.slice(0, 60).map((t) => (
-            <TransactionRow
-              key={t.id}
-              t={t}
-              selectionMode={selectionMode}
-              selected={selectedIds.includes(t.id)}
-              onSelect={toggleSelectOne}
-              onUpdate={updateTransaction}
-              onDelete={removeTransaction}
+            <input
+              className="input"
+              placeholder="Merchant / description"
+              value={form.merchant}
+              onChange={(e) => setForm((f) => ({ ...f, merchant: e.target.value }))}
+              style={{ flex: "1 1 140px" }}
             />
-          ))}
-        </div>
+          </div>
+          <button className="btn" type="submit" style={{ width: "100%" }}>
+            Add
+          </button>
+        </form>
+
+        {/* Statement Upload & PDF Password Modal */}
+        <FinanceImportModal
+          file={file}
+          setFile={setFile}
+          uploadLoading={uploadLoading}
+          uploadError={uploadError}
+          uploadResult={uploadResult}
+          uploadStatement={uploadStatement}
+          showPasswordModal={showPasswordModal}
+          pdfPassword={pdfPassword}
+          setPdfPassword={setPdfPassword}
+          pdfPasswordError={pdfPasswordError}
+          cancelPasswordModal={cancelPasswordModal}
+          dialogProps={dialogProps}
+          titleProps={titleProps}
+        />
       </div>
 
-      {/* PDF Password Modal */}
-      {showPasswordModal && (
-        <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(4px)" }}>
-          <div className="card" {...dialogProps} style={{ maxWidth: 420, width: "100%", background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 16, padding: 24, boxShadow: "var(--shadow)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--accent-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--accent)" }}>
-                <Lock size={20} />
-              </div>
-              <h3 {...titleProps} style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "var(--text)" }}>Password Protected PDF</h3>
-            </div>
-            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px 0", lineHeight: 1.4 }}>
-              This bank statement is encrypted. Please enter the PDF password (e.g. DOB in <code>DDMMYYYY</code> format, PAN number, or Account number) to unlock it for AI extraction.
-            </p>
-
-            <form onSubmit={(e) => { e.preventDefault(); uploadStatement(null, pdfPassword); }}>
-              <input
-                type="password"
-                className="input"
-                placeholder="Enter PDF password..."
-                value={pdfPassword}
-                onChange={(e) => setPdfPassword(e.target.value)}
-                autoFocus
-                required
-                style={{ width: "100%", marginBottom: 12 }}
-              />
-              {pdfPasswordError && (
-                <div style={{ color: "#ef4444", fontSize: 12, marginBottom: 12, fontWeight: 500 }}>
-                  {pdfPasswordError}
-                </div>
-              )}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={cancelPasswordModal}
-                >
-                  Cancel
-                </button>
-                <button className="btn" type="submit" disabled={uploadLoading}>
-                  {uploadLoading ? "Decrypting..." : "Unlock & Extract"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <FinanceTransactionList
+        transactions={transactions}
+        filteredTransactions={filteredTransactions}
+        selectedMonth={selectedMonth}
+        formatMonthName={formatMonthName}
+        txFilter={txFilter}
+        setTxFilter={setTxFilter}
+        monthTransactionCount={monthTransactionCount}
+        selectionMode={selectionMode}
+        setSelectionMode={setSelectionMode}
+        selectedIds={selectedIds}
+        setSelectedIds={setSelectedIds}
+        toggleSelectAll={toggleSelectAll}
+        toggleSelectOne={toggleSelectOne}
+        bulkCategory={bulkCategory}
+        setBulkCategory={setBulkCategory}
+        bulkUpdating={bulkUpdating}
+        handleBulkCategoryChange={handleBulkCategoryChange}
+        handleBulkDelete={handleBulkDelete}
+        updateTransaction={updateTransaction}
+        removeTransaction={removeTransaction}
+      />
     </div>
   );
 }
-
-const TransactionRow = memo(function TransactionRow({ t, selectionMode, selected, onSelect, onUpdate, onDelete }) {
-  const [editing, setEditing] = useState(false);
-
-  if (editing) {
-    return (
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "8px 10px", borderRadius: 8, background: "var(--bg-elevated)" }}>
-        <select className="input" defaultValue={t.type} style={{ flex: "1 1 100px" }} onChange={(e) => onUpdate(t.id, { type: e.target.value })}>
-          <option value="expense">Expense</option>
-          <option value="income">Income</option>
-        </select>
-        <select className="input" defaultValue={t.category} style={{ flex: "1 1 130px" }} onChange={(e) => onUpdate(t.id, { category: e.target.value })}>
-          {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>{label}</option>
-          ))}
-        </select>
-        <input className="input" type="number" defaultValue={t.amount} style={{ flex: "1 1 100px" }} onBlur={(e) => onUpdate(t.id, { amount: Number(e.target.value) })} />
-        <button type="button" className="btn-ghost btn" style={{ fontSize: 12, padding: "6px 10px" }} onClick={() => setEditing(false)}>Done</button>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        justify: "space-between",
-        alignItems: "center",
-        padding: "8px 12px",
-        borderRadius: 8,
-        background: selected ? "var(--accent-soft)" : "var(--bg-elevated)",
-        gap: 10,
-        flexWrap: "wrap",
-        border: selected ? "1px solid var(--accent)" : "1px solid transparent",
-        transition: "background 0.15s ease, border-color 0.15s ease",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: "1 1 160px" }}>
-        {selectionMode && (
-          <input
-            type="checkbox"
-            className="custom-checkbox"
-            checked={selected}
-            onChange={() => onSelect(t.id)}
-          />
-        )}
-        <div style={{ fontSize: 13, wordBreak: "break-word" }}>
-          {t.merchant || CATEGORY_LABELS[t.category] || t.category}
-          <span style={{ color: "var(--text-muted)" }}> · {formatNice(t.date)} · {CATEGORY_LABELS[t.category] || t.category}</span>
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-        <span style={{ fontWeight: 600, color: t.type === "income" ? "var(--present)" : "var(--absent)" }}>
-          {t.type === "income" ? "+" : "−"}{rupees(t.amount)}
-        </span>
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="btn-ghost btn tx-action-btn"
-          style={{ fontSize: 11, padding: "5px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}
-          title="Edit transaction"
-        >
-          <Pencil size={13} />
-          <span className="tx-action-text">Edit</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(t.id)}
-          className="btn-ghost btn tx-action-btn"
-          style={{ fontSize: 11, padding: "5px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}
-          title="Delete transaction"
-        >
-          <Trash2 size={13} />
-          <span className="tx-action-text">Delete</span>
-        </button>
-      </div>
-    </div>
-  );
-});

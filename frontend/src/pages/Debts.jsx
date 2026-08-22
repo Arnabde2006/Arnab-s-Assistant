@@ -18,15 +18,12 @@ import {
   CheckCheck,
   FileText
 } from "lucide-react";
+import { rupees, parseLocalDate } from "../utils/format.js";
 
-function rupees(n) {
-  return `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
-}
-
+// Day + month with no year at all -- neither of the shared date formats.
 function formatNice(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  return parseLocalDate(dateStr).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
 export default function Debts() {

@@ -971,7 +971,7 @@ select.input {
   display: none;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .app-shell {
     flex-direction: column;
   }
@@ -2483,7 +2483,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
 }
 
 /* Keep toasts clear of the fixed bottom nav on mobile (56px + safe area). */
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .toast-viewport {
     left: 12px;
     right: 12px;
@@ -2602,3 +2602,151 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
   opacity: 0.4;
   cursor: default;
 }
+
+/* ── Tier C — Architecture & Utility Design System Tokens ──────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 520px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card-box {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.stat-card-box:hover {
+  border-color: var(--border-strong);
+}
+
+.stat-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.stat-card-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.badge-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.badge-accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.badge-muted {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.form-group-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.form-label-styled {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-gap-sm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flex-gap-md {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+

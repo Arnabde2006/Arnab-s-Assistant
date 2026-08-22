@@ -1,6 +1,21 @@
-/**
- * Helper utilities for timetable slot manipulation, grouping, and merged slot handling.
- */
+export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+export const PRESET_CLASSES = [
+  "BCA 2A",
+  "BCA 1A",
+  "BCA 1B",
+  "BCA 1C",
+  "BCA 1D",
+  "BCA 2B",
+  "BCA 2C",
+  "BCA 3A",
+  "BCA 3B",
+  "BCA 3C",
+  "1st Year",
+  "2nd Year",
+  "3rd Year",
+  "4th Year",
+];
 
 /**
  * Checks if a given slot represents a BREAK or lunch period.
