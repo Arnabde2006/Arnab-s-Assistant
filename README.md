@@ -3,14 +3,14 @@
 A minimalist, dark-first (with live light theme) web app for college life:
 day-wise attendance tracking (present/absent/half-day) with safe-to-miss
 calculations and interactive bunk simulator, a note-based to-do list that auto-arranges
-itself onto a calendar, a weekly timetable, exam-timetable upload (AI-read and
-auto-added to your calendar), an AI chat assistant, semester grade-card
-upload with automatic SGPA/CGPA calculation and trend visualizer, an income/expense
-tracker with AI statement reading and bulk category editing, and a Pomodoro focus timer.
+itself onto a calendar, a weekly timetable (with Columns, Routine Grid, and Agenda views),
+exam-timetable upload (AI-read and auto-added to your calendar), an AI chat assistant,
+semester grade-card upload with automatic SGPA/CGPA calculation and trend visualizer,
+an income/expense tracker with AI statement PDF / UPI screenshot reading (with password-protected PDF support) and bulk category editing, and a Pomodoro focus timer.
 
 ## Stack
-- **Frontend:** React (Vite), React Router, Lucide Icons — no external UI framework, all custom CSS
-- **Backend:** Node.js + Express, plain SQL via `pg`, JWT auth
+- **Frontend:** React (Vite), React Router, Lucide Icons — custom CSS design token system with responsive 380px/640px/768px breakpoints
+- **Backend:** Node.js + Express, plain SQL via `pg`, JWT auth with 401 mid-session expiry handling & 20s timeouts
 - **Database:** Neon (serverless Postgres, free tier)
 - **AI:** Google Gemini API (chat assistant, exam-timetable OCR, grade-card OCR, statement PDF & UPI screenshot parsing)
 
@@ -18,17 +18,12 @@ tracker with AI statement reading and bulk category editing, and a Pomodoro focu
 ```
 college-app/
   backend/    Express API (auth, subjects, attendance, todos, timetable, exams, grades, finance, AI, dashboard)
-  frontend/   React app (Vite)
+  frontend/   React app (Vite) with modular subcomponents for Timetable & Finance, ToastContext, and ConfirmContext
 ```
 
-New to the codebase? **See [`CODE_GUIDE.md`](./CODE_GUIDE.md)** — a map of
-every file plus step-by-step instructions for the edits you're most likely
-to want to make yourself (new page, new field, changing colors, changing
-the AI prompts, etc).
+New to the codebase? **See [`CODE_GUIDE.md`](./CODE_GUIDE.md)** — a complete file map plus step-by-step instructions for common customizations.
 
-A `.gitignore` is included, so `node_modules/`, `.env` files, and build
-output won't get committed if you push this to GitHub. Only `.env.example`
-(with placeholder values, no real secrets) is tracked.
+A `.gitignore` is included, so `node_modules/`, `.env` files, and build output won't get committed if you push this to GitHub. Only `.env.example` (with placeholder values, no real secrets) is tracked.
 
 ---
 
@@ -110,29 +105,24 @@ You now have a live, free, full-stack app you can open from your phone or laptop
 ---
 
 ## Features included
-- **Auth & Profile** — register/login with JWT, password hashing, profile management, monthly budget configuration.
+- **Auth & Profile** — register/login with JWT, password hashing, 401 auto-logout handling, profile management, monthly budget configuration.
 - **Finance Tracker** — track income and expenses, month-by-month navigation picker (`ThemeMonthPicker`), monthly budget progress bar, spending breakdown by category (`Family`, `Food`, `Hostel/Rent`, `Travel`, `Subscriptions`, `Shopping`, `Education`, `Entertainment`, `Other`), optional bulk selection & bulk category editing, automatic duplicate transaction prevention on statement re-uploads.
-- **AI Statement & UPI Upload** — upload bank statement PDFs or Google Pay / PhonePe / Paytm screenshots; Gemini reads and auto-categorizes all transactions.
+- **AI Statement & UPI Upload** — upload bank statement PDFs or Google Pay / PhonePe / Paytm screenshots; password-protected PDF support with modal password entry; Gemini reads and auto-categorizes all transactions.
 - **Attendance & Bunk Simulator** — mark each whole day present, absent, half-day, or **no college** (holiday); safe-to-miss calculations against your attendance goal (default 75%, editable in settings); interactive bunk simulator to test future attendance scenarios.
 - **College holidays** — mark a date as "no college" manually, or upload a photo/PDF of your college's holiday list; holiday dates show as an "Off" tag with a clean toggle.
 - **To-do → Calendar** — type notes like *"submit assignment fri"* or *"lab report tomorrow"* to automatically place items on the planner calendar.
 - **Exam timetable upload** — upload a photo or PDF of your exam schedule; Gemini reads it and auto-adds each exam to your calendar.
 - **Grades & Trend Visualizer** — upload semester grade cards (photo or PDF); Gemini extracts course/credits/grade, computes SGPA per semester and overall CGPA with visual trend charts.
 - **AI chat assistant** — ask questions about your attendance, tasks, exams, finance summary, or grades with real-time context injection.
-- **Timetable** — weekly class schedule linked to your subjects.
+- **Timetable** — weekly class schedule with Columns, Routine Grid, and Agenda layout renderers, customizer theme controls, and AI OCR schedule import.
 - **Focus timer** — Pomodoro (25/5/15) with a progress ring.
 - **Dashboard** — task streak, attendance streak, today's pending items, upcoming exams, finance preview, attendance ring, and AI assistant.
 - **View-only link** — shareable read-only dashboard link (`/view/<token>`) to view attendance and calendar on any device without logging in.
-- **Mobile-first UX** — native bottom tab bar below 720px, touch-optimized Lucide icon controls for compact mobile row actions, responsive layouts.
+- **Accessibility & UX** — dialog semantics across all modals (`useDialog`), keyboard drag-reorder (`ReorderControls`), polite live region announcer (`AnnouncerContext`), accessible `useConfirm` modal replacement for native confirm dialogs, and reduced-motion support.
+- **Mobile-first UX** — native bottom tab bar below 768px, touch-optimized Lucide icon controls for compact mobile row actions, responsive layouts.
 - **Live theme switch** — Ink (dark) and Parchment (light) themes with theme-matching custom controls.
 
 ## Notes on the AI features
 - Gemini can occasionally misread a messy scan — always double-check auto-added exam dates, grades, or statement entries before relying on them.
 - File uploads are capped around 15MB by the server; a clear phone photo or PDF is plenty.
 - The `GEMINI_MODEL` env var defaults to `gemini-2.5-flash`.
-
-## Ideas for what to add next
-- Push/email reminders for tasks due today
-- Recurring tasks (weekly lab reports, etc.)
-- Export/import your data as JSON
-- Make it an installable PWA for offline use
