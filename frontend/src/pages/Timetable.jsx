@@ -7,7 +7,11 @@ import { fileToBase64 } from "../utils/fileToBase64.js";
 import { groupConsecutiveSlots, DAYS, PRESET_CLASSES } from "../utils/timetableUtils.js";
 import { useTheme } from "../context/ThemeContext.jsx";
 import TimetableHeader from "../components/timetable/TimetableHeader.jsx";
-import { TimetableColumnsView } from "../components/timetable/TimetableViews.jsx";
+import {
+  TimetableColumnsView,
+  TimetableMatrixView,
+  TimetableAgendaView,
+} from "../components/timetable/TimetableViews.jsx";
 import { TimetableAddForm, TimetableEditModal } from "../components/timetable/TimetableSlotModal.jsx";
 import TimetableAiModal from "../components/timetable/TimetableAiModal.jsx";
 import TimetableCustomizerModal from "../components/timetable/TimetableCustomizerModal.jsx";
@@ -320,6 +324,30 @@ export default function Timetable() {
     });
   }, [hideWeekends]);
 
+  const timePeriods = useMemo(() => {
+    const boundarySet = new Set();
+    filteredSlots.forEach((s) => {
+      if (s.startTime) boundarySet.add(s.startTime.trim());
+      if (s.endTime) boundarySet.add(s.endTime.trim());
+    });
+    const sortedBoundaries = Array.from(boundarySet).sort();
+
+    const periods = [];
+    for (let i = 0; i < sortedBoundaries.length - 1; i++) {
+      const start = sortedBoundaries[i];
+      const end = sortedBoundaries[i + 1];
+      const isUsed = filteredSlots.some(
+        (s) =>
+          (s.startTime || "").trim() <= start &&
+          (s.endTime || "").trim() >= end
+      );
+      if (isUsed) {
+        periods.push({ startTime: start, endTime: end, key: `${start}-${end}` });
+      }
+    }
+    return periods;
+  }, [filteredSlots]);
+
   const rawTheme = THEMES[timetableTheme] || THEMES.ink;
   const activeTheme =
     isLightMode && timetableTheme === "ink"
@@ -339,6 +367,8 @@ export default function Timetable() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  const effectiveLayout = isMobile ? "columns" : viewLayout;
 
   const activeDays = useMemo(() => {
     if (!isMobile) return displayDays;
@@ -538,20 +568,51 @@ export default function Timetable() {
           transition: "all 0.2s ease",
         }}
       >
-        <TimetableColumnsView
-          activeDays={activeDays}
-          currentDayIndex={currentDayIndex}
-          filteredSlots={filteredSlots}
-          activeTheme={activeTheme}
-          isCompact={isCompact}
-          isMobile={isMobile}
-          hideWeekends={hideWeekends}
-          showRoom={showRoom}
-          showClassTag={showClassTag}
-          selectedClass={selectedClass}
-          onEdit={startEditSlot}
-          onRemove={requestDeleteSlot}
-        />
+        {effectiveLayout === "columns" && (
+          <TimetableColumnsView
+            activeDays={activeDays}
+            currentDayIndex={currentDayIndex}
+            filteredSlots={filteredSlots}
+            activeTheme={activeTheme}
+            isCompact={isCompact}
+            isMobile={isMobile}
+            hideWeekends={hideWeekends}
+            showRoom={showRoom}
+            showClassTag={showClassTag}
+            selectedClass={selectedClass}
+            onEdit={startEditSlot}
+            onRemove={requestDeleteSlot}
+          />
+        )}
+
+        {effectiveLayout === "matrix" && (
+          <TimetableMatrixView
+            activeDays={activeDays}
+            currentDayIndex={currentDayIndex}
+            filteredSlots={filteredSlots}
+            timePeriods={timePeriods}
+            activeTheme={activeTheme}
+            showRoom={showRoom}
+            showClassTag={showClassTag}
+            selectedClass={selectedClass}
+            onEdit={startEditSlot}
+            onRemove={requestDeleteSlot}
+          />
+        )}
+
+        {effectiveLayout === "agenda" && (
+          <TimetableAgendaView
+            activeDays={activeDays}
+            currentDayIndex={currentDayIndex}
+            filteredSlots={filteredSlots}
+            activeTheme={activeTheme}
+            showRoom={showRoom}
+            showClassTag={showClassTag}
+            selectedClass={selectedClass}
+            onEdit={startEditSlot}
+            onRemove={requestDeleteSlot}
+          />
+        )}
       </div>
 
       <TimetableEditModal
