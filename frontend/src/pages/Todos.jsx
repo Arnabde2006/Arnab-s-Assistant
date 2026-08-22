@@ -6,15 +6,12 @@ import { useAsyncAction } from "../hooks/useAsyncAction.js";
 import { useDialog } from "../hooks/useDialog.js";
 import Switch from "../components/Switch.jsx";
 import { CreditCard, Pencil, Check, X } from "lucide-react";
+import { toISO, parseLocalDate } from "../utils/format.js";
 
-function pad(n) {
-  return String(n).padStart(2, "0");
-}
-function toISO(d) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+// Returns the parts rather than a string, because the planner renders the
+// weekday, day number and month into separate elements.
 function formatDay(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
+  const d = parseLocalDate(dateStr);
   return { weekday: d.toLocaleDateString(undefined, { weekday: "short" }), num: d.getDate(), month: d.toLocaleDateString(undefined, { month: "short" }) };
 }
 
@@ -178,7 +175,7 @@ export default function Todos() {
       const renDateStr = sub.renewal_date.split("T")[0];
       const isTrial = sub.plan_type === "free_trial";
       pushSubEvent(renDateStr, { sub, type: "renewal_day", isTrial });
-      const renDateObj = new Date(renDateStr + "T00:00:00");
+      const renDateObj = parseLocalDate(renDateStr);
       const remindDateObj = new Date(renDateObj);
       remindDateObj.setDate(remindDateObj.getDate() - (sub.remind_days_before || 3));
       const remindDateStr = toISO(remindDateObj);

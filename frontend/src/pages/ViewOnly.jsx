@@ -16,13 +16,9 @@ import {
 } from "lucide-react";
 import ThemeToggle from "../components/ThemeToggle.jsx";
 import AttendanceRing from "../components/AttendanceRing.jsx";
+import { formatShortDate as formatNice } from "../utils/format.js";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
-
-function formatNice(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-}
 
 const STATUS_META = {
   present: { label: "Present", color: "var(--present)" },

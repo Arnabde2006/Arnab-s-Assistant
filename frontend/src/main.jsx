@@ -6,6 +6,7 @@ import "./index.css";
 import { ThemeProvider } from "./context/ThemeContext.jsx";
 import { ToastProvider } from "./context/ToastContext.jsx";
 import { AnnouncerProvider } from "./context/AnnouncerContext.jsx";
+import { ConfirmProvider } from "./context/ConfirmContext.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -19,9 +20,14 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           {/* ToastProvider sits above AuthProvider: session-expiry notices are
               raised from inside auth handling, so the surface must already exist. */}
           <ToastProvider>
-            <AuthProvider>
-              <App />
-            </AuthProvider>
+            {/* ConfirmProvider renders one dialog for the whole app and hands
+                out a promise-returning confirm(). Above AuthProvider so that
+                anything inside the router can await a confirmation. */}
+            <ConfirmProvider>
+              <AuthProvider>
+                <App />
+              </AuthProvider>
+            </ConfirmProvider>
           </ToastProvider>
         </AnnouncerProvider>
       </ThemeProvider>

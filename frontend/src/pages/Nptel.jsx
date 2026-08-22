@@ -3,7 +3,9 @@ import { api } from "../api/client.js";
 import { useLoadAnnounce } from "../context/AnnouncerContext.jsx";
 import { useDialog } from "../hooks/useDialog.js";
 import { useToast } from "../context/ToastContext.jsx";
+import { useConfirm } from "../context/ConfirmContext.jsx";
 import ReorderControls from "../components/ReorderControls.jsx";
+import { toISO, formatMediumDate as formatDateDisplay } from "../utils/format.js";
 import {
   Award,
   Calendar,
@@ -21,20 +23,6 @@ import {
   Camera,
   GripVertical,
 } from "lucide-react";
-
-function pad(n) {
-  return String(n).padStart(2, "0");
-}
-
-function toISO(d) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function formatDateDisplay(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
 
 const INITIAL_FORM = {
   course_name: "",
@@ -74,6 +62,7 @@ export default function Nptel() {
   const [dragOverCourseIndex, setDragOverCourseIndex] = useState(null);
   const [reorderMessage, setReorderMessage] = useState("");
   const toast = useToast();
+  const confirm = useConfirm();
   useLoadAnnounce(
     loading,
     "Loading NPTEL courses",
@@ -364,12 +353,17 @@ export default function Nptel() {
 
   const handleDeleteCourse = async (courseId, e) => {
     e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this NPTEL course and all its assignment trackers?")) return;
+    const ok = await confirm({
+      title: "Delete this course?",
+      message: "The course and all of its assignment trackers will be removed. This cannot be undone.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
     try {
       await api.del(`/nptel/${courseId}`);
       loadNptelData();
     } catch (err) {
-      alert(err.message || "Failed to delete course");
+      toast.error(`Couldn't delete the course — ${err.message}`);
     }
   };
 

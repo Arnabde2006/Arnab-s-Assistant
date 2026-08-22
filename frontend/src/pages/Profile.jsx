@@ -3,10 +3,12 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { api } from "../api/client.js";
 import Switch from "../components/Switch.jsx";
 import ViewOnlyLinkCard from "../components/ViewOnlyLinkCard.jsx";
+import { useConfirm, CONFIRM_REGENERATE_VIEW_LINK } from "../context/ConfirmContext.jsx";
 import { Smartphone, Check } from "lucide-react";
 
 export default function Profile() {
   const { user, setUser } = useAuth();
+  const confirm = useConfirm();
 
   // Profile fields state
   const [name, setName] = useState(user?.name || "");
@@ -127,7 +129,7 @@ export default function Profile() {
 
   // Invalidate and regenerate View Token helper
   async function handleRegenerate() {
-    if (!confirm("This will invalidate your old view-only link. Anyone you shared it with will lose access. Continue?")) return;
+    if (!(await confirm(CONFIRM_REGENERATE_VIEW_LINK))) return;
     setRegenerateLoading(true);
     try {
       const data = await api.post("/auth/view-token/regenerate", {});

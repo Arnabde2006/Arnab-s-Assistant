@@ -6,17 +6,7 @@ import AttendanceRing from "../components/AttendanceRing.jsx";
 import BunkSimulator from "../components/BunkSimulator.jsx";
 import FileUpload from "../components/FileUpload.jsx";
 import { fileToBase64 } from "../utils/fileToBase64.js";
-
-function pad(n) {
-  return String(n).padStart(2, "0");
-}
-function toISO(d) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-function formatNice(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-}
+import { toISO, formatShortDate as formatNice } from "../utils/format.js";
 
 const STATUS_META = {
   present: { label: "Present", color: "var(--present)" },
